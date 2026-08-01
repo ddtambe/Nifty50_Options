@@ -1,0 +1,23 @@
+{
+  "records": {
+    "underlyingValue": 24812.35,
+    "expiryDates": ["31-Jul-2026", "07-Aug-2026", "14-Aug-2026", "28-Aug-2026"],
+    "data": [
+      {"strikePrice": 20000, "expiryDate": "31-Jul-2026",
+       "CE": {"openInterest": 5, "changeinOpenInterest": 1, "lastPrice": 4800.0, "impliedVolatility": 20.0, "totalTradedVolume": 3},
+       "PE": {"openInterest": 7, "changeinOpenInterest": 2, "lastPrice": 0.5, "impliedVolatility": 30.0, "totalTradedVolume": 4}},
+      {"strikePrice": 24800, "expiryDate": "31-Jul-2026",
+       "CE": {"openInterest": 342100, "changeinOpenInterest": 22400, "lastPrice": 74.2, "impliedVolatility": 11.2, "totalTradedVolume": 152300},
+       "PE": {"openInterest": 288900, "changeinOpenInterest": -5100, "lastPrice": 78.9, "impliedVolatility": 12.1, "totalTradedVolume": 61200}},
+      {"strikePrice": 24900, "expiryDate": "31-Jul-2026",
+       "CE": {"openInterest": 289500, "changeinOpenInterest": 41200, "lastPrice": 38.7, "impliedVolatility": 11.6, "totalTradedVolume": 210800},
+       "PE": {"openInterest": 178200, "changeinOpenInterest": -12800, "lastPrice": 142.3, "impliedVolatility": 12.6, "totalTradedVolume": 33400}},
+      {"strikePrice": 24800, "expiryDate": "07-Aug-2026",
+       "CE": {"openInterest": 120000, "changeinOpenInterest": 3000, "lastPrice": 120.0, "impliedVolatility": 12.0, "totalTradedVolume": 5000},
+       "PE": {"openInterest": 130000, "changeinOpenInterest": 4000, "lastPrice": 118.0, "impliedVolatility": 12.5, "totalTradedVolume": 6000}},
+      {"strikePrice": 31000, "expiryDate": "31-Jul-2026",
+       "CE": {"openInterest": 10, "changeinOpenInterest": 1, "lastPrice": 0.5, "impliedVolatility": 25.0, "totalTradedVolume": 2},
+       "PE": {"openInterest": 12, "changeinOpenInterest": 1, "lastPrice": 6200.0, "impliedVolatility": 35.0, "totalTradedVolume": 3}}
+    ]
+  }
+}
