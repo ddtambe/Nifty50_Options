@@ -36,10 +36,14 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/
-          if git diff --staged --quiet; then
-            echo "No data changes to commit."
+          if [ -d data/ ]; then
+            git add data/
+            if git diff --staged --quiet; then
+              echo "No data changes to commit."
+            else
+              git commit -m "data: option-chain snapshot $(date -u +'%Y-%m-%dT%H:%MZ')"
+              git push
+            fi
           else
-            git commit -m "data: option-chain snapshot $(date -u +'%Y-%m-%dT%H:%MZ')"
-            git push
+            echo "No data/ folder (market off or fetch failed)."
           fi
