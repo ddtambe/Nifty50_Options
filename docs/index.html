@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nifty Option-Chain Dashboard</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.plot.ly/plotly-2.32.0.min.js" charset="utf-8"></script>
+</head>
+<body>
+  <header>
+    <h1>Nifty 50 Option-Chain Direction</h1>
+    <div class="controls">
+      <label>Day <select id="daySelect"></select></label>
+      <label>Expiry <select id="expirySelect"></select></label>
+      <span id="updated"></span>
+    </div>
+  </header>
+  <main>
+    <section><h2>Support / Resistance Walls (CE vs PE OI)</h2><div id="wallsChart"></div></section>
+    <section><h2>Day Timeline — Spot vs Max Pain vs PCR</h2><div id="timelineChart"></div></section>
+    <section><h2>Buildup Map (latest snapshot)</h2><div id="buildupTable"></div></section>
+  </main>
+  <footer>
+    <p>Data auto-updates every ~15 min during market hours. Not financial advice; you decide the trade.</p>
+  </footer>
+  <script src="app.js"></script>
+</body>
+</html>
