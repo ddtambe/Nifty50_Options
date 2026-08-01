@@ -1,0 +1,45 @@
+name: fetch-nifty-option-chain
+
+on:
+  schedule:
+    # Every 15 min across the IST market window (03:45–10:00 UTC).
+    - cron: "*/15 3-10 * * 1-5"
+    # Fine-grained tail to capture ~15:25 & ~15:30 IST (09:55 & 10:00 UTC).
+    - cron: "55,59 9 * * 1-5"
+    - cron: "0 10 * * 1-5"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write   # allow committing data back to the repo
+
+concurrency:
+  group: fetch-nifty
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run fetch cycle
+        run: python -m nifty_oc.main
+
+      - name: Commit data if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          if git diff --staged --quiet; then
+            echo "No data changes to commit."
+          else
+            git commit -m "data: option-chain snapshot $(date -u +'%Y-%m-%dT%H:%MZ')"
+            git push
+          fi
