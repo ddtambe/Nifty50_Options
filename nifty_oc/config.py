@@ -1,17 +1,13 @@
-"""User-editable configuration constants."""
+"""Market-hours guard. `now_ist` must already be IST."""
+import os
+from datetime import time
+from nifty_oc.config import MARKET_OPEN, MARKET_CLOSE
 
-SYMBOL = "NIFTY"
 
-# Strike window — edit these two to change coverage.
-STRIKE_MIN = 21000
-STRIKE_MAX = 30000
-STRIKE_STEP = 50       # Nifty native strike gap (used for indicator math)
-DISPLAY_STEP = 200     # strikes shown/stored in output files
-
-NUM_EXPIRIES = 3       # current + next + next-to-next
-
-MARKET_OPEN = (9, 15)   # IST hh, mm
-MARKET_CLOSE = (15, 30)  # IST hh, mm
-
-DATA_DIR = "data"
-DOCS_DIR = "docs"
+def is_market_hours(now_ist) -> bool:
+    # FORCE_FETCH=true bypasses market-hours check (for manual workflow runs)
+    if os.environ.get("FORCE_FETCH", "").lower() == "true":
+        return True
+    open_t = time(*MARKET_OPEN)
+    close_t = time(*MARKET_CLOSE)
+    return open_t <= now_ist.time() <= close_t
