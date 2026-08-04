@@ -16,3 +16,8 @@ th:first-child, td:first-child { text-align: center; font-weight: 600; }
 .bu-short-covering { background: #1e3a8a; }
 .bu-long-unwinding { background: #78350f; }
 footer { padding: 16px 24px; color: #94a3b8; font-size: 12px; }
+.compare-controls { margin-bottom: 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.compare-label { color: #94a3b8; font-size: 13px; }
+.compare-item { display: inline-flex; align-items: center; gap: 4px; background: #334155; padding: 4px 8px; border-radius: 4px; }
+.compare-item input { margin: 0; }
+.compare-item label { color: #e2e8f0; font-size: 13px; cursor: pointer; }
