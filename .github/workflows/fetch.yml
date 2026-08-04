@@ -7,7 +7,16 @@ on:
     # Fine-grained tail to capture ~15:25 & ~15:30 IST (09:55 & 10:00 UTC).
     - cron: "55,59 9 * * 1-5"
     - cron: "0 10 * * 1-5"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force fetch (bypass market-hours check)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 permissions:
   contents: write   # allow committing data back to the repo
@@ -32,6 +41,7 @@ jobs:
       - name: Run fetch cycle
         run: python -m nifty_oc.main
         env:
+          FORCE_FETCH: ${{ github.event.inputs.force || 'false' }}
           FIVEPAISA_APP_NAME: ${{ secrets.FIVEPAISA_APP_NAME }}
           FIVEPAISA_APP_SOURCE: ${{ secrets.FIVEPAISA_APP_SOURCE }}
           FIVEPAISA_USER_ID: ${{ secrets.FIVEPAISA_USER_ID }}
