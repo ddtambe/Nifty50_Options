@@ -83,6 +83,36 @@ def _timestamp_to_nse_style(ts_millis: int) -> str:
     return dt.strftime("%d-%b-%Y")
 
 
+def _parse_expiry_date(expiry_obj) -> int:
+    """Extract timestamp from 5paisa expiry format.
+
+    Input can be:
+    - int: raw timestamp in milliseconds
+    - str: '/Date(1785834000000+0530)/'
+    - dict: {'ExpiryDate': '/Date(1785834000000+0530)/', ...}
+    """
+    import re
+
+    if isinstance(expiry_obj, int):
+        return expiry_obj
+
+    if isinstance(expiry_obj, dict):
+        expiry_str = expiry_obj.get("ExpiryDate", "")
+    else:
+        expiry_str = str(expiry_obj)
+
+    # Parse /Date(TIMESTAMP+OFFSET)/ format
+    match = re.search(r'/Date\((\d+)[+-]', expiry_str)
+    if match:
+        return int(match.group(1))
+
+    # Try direct int conversion
+    try:
+        return int(expiry_str)
+    except ValueError:
+        raise FetchError(f"Cannot parse expiry date: {expiry_obj}")
+
+
 def _transform_5paisa_to_nse_format(client: FivePaisaClient, num_expiries: int) -> dict:
     """
     Fetch option chain from 5paisa and transform to NSE-like format.
@@ -101,7 +131,7 @@ def _transform_5paisa_to_nse_format(client: FivePaisaClient, num_expiries: int) 
       }
     }
     """
-    # Get expiry dates from API (returns timestamps in milliseconds)
+    # Get expiry dates from API
     expiry_response = client.get_expiry("N", "NIFTY")
     print(f"[debug] get_expiry response: {expiry_response}")
 
@@ -113,9 +143,9 @@ def _transform_5paisa_to_nse_format(client: FivePaisaClient, num_expiries: int) 
     else:
         raise FetchError(f"Unexpected expiry response format: {type(expiry_response)}")
 
-    # Take first N expiries
-    expiry_timestamps = expiry_list[:num_expiries]
-    print(f"[debug] Using expiries: {expiry_timestamps}")
+    # Parse and take first N expiries (convert to timestamps)
+    expiry_timestamps = [_parse_expiry_date(e) for e in expiry_list[:num_expiries]]
+    print(f"[debug] Using expiry timestamps: {expiry_timestamps}")
 
     all_data = []
     spot_price = None
