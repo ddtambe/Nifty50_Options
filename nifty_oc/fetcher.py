@@ -1,18 +1,43 @@
 """Fetch option chain data via 5paisa API."""
 import os
+import hmac
+import struct
+import hashlib
+import base64
+import time as time_module
 from datetime import datetime, timezone, timedelta
 from py5paisa import FivePaisaClient
 
 from nifty_oc.config import NUM_EXPIRIES
 
 
+def _generate_totp(secret: str) -> str:
+    """Generate current TOTP code from secret (RFC 6238)."""
+    # Decode base32 secret
+    key = base64.b32decode(secret.upper() + '=' * ((8 - len(secret) % 8) % 8))
+    # Get current 30-second window
+    counter = int(time_module.time()) // 30
+    # Generate HMAC-SHA1
+    counter_bytes = struct.pack('>Q', counter)
+    hmac_hash = hmac.new(key, counter_bytes, hashlib.sha1).digest()
+    # Dynamic truncation
+    offset = hmac_hash[-1] & 0x0F
+    code = struct.unpack('>I', hmac_hash[offset:offset + 4])[0] & 0x7FFFFFFF
+    return str(code % 1000000).zfill(6)
+
+
 class FetchError(Exception):
     pass
 
 
-def _get_credentials() -> dict:
-    """Read 5paisa credentials from environment variables."""
-    required = [
+def _get_credentials() -> tuple[dict, dict]:
+    """Read 5paisa credentials from environment variables.
+
+    Returns (cred_dict, login_dict) where:
+    - cred_dict: APP_NAME, APP_SOURCE, USER_ID, PASSWORD, USER_KEY, ENCRYPTION_KEY
+    - login_dict: CLIENT_CODE, TOTP_SECRET, PIN for TOTP login
+    """
+    cred_keys = [
         "FIVEPAISA_APP_NAME",
         "FIVEPAISA_APP_SOURCE",
         "FIVEPAISA_USER_ID",
@@ -20,52 +45,45 @@ def _get_credentials() -> dict:
         "FIVEPAISA_USER_KEY",
         "FIVEPAISA_ENCRYPTION_KEY",
     ]
+    login_keys = [
+        "FIVEPAISA_CLIENT_CODE",
+        "FIVEPAISA_TOTP_SECRET",
+        "FIVEPAISA_PIN",
+    ]
+
     cred = {}
+    login = {}
     missing = []
-    for key in required:
+
+    for key in cred_keys:
         val = os.environ.get(key)
         if not val:
             missing.append(key)
         else:
-            # Map env var names to 5paisa expected keys
             cred_key = key.replace("FIVEPAISA_", "")
             cred[cred_key] = val
+
+    for key in login_keys:
+        val = os.environ.get(key)
+        if not val:
+            missing.append(key)
+        else:
+            login_key = key.replace("FIVEPAISA_", "")
+            login[login_key] = val
 
     if missing:
         raise FetchError(f"Missing credentials: {', '.join(missing)}")
 
-    return cred
+    return cred, login
 
 
-def _get_expiry_dates(count: int) -> list[int]:
-    """Get the next N Thursday expiry dates as YYYYMMDD integers."""
-    IST = timezone(timedelta(hours=5, minutes=30))
-    today = datetime.now(IST).date()
-
-    expiries = []
-    d = today
-    while len(expiries) < count:
-        # Find next Thursday (weekday 3)
-        days_ahead = (3 - d.weekday()) % 7
-        if days_ahead == 0 and d <= today:
-            days_ahead = 7
-        next_thu = d + timedelta(days=days_ahead)
-
-        # Only add if it's in the future or today
-        if next_thu >= today:
-            expiries.append(int(next_thu.strftime("%Y%m%d")))
-        d = next_thu + timedelta(days=1)
-
-    return expiries[:count]
-
-
-def _format_expiry_nse_style(yyyymmdd: int) -> str:
-    """Convert 20260731 to '31-Jul-2026' (NSE format for compatibility)."""
-    dt = datetime.strptime(str(yyyymmdd), "%Y%m%d")
+def _timestamp_to_nse_style(ts_millis: int) -> str:
+    """Convert timestamp milliseconds to '31-Jul-2026' (NSE format)."""
+    dt = datetime.fromtimestamp(ts_millis / 1000, tz=timezone(timedelta(hours=5, minutes=30)))
     return dt.strftime("%d-%b-%Y")
 
 
-def _transform_5paisa_to_nse_format(client: FivePaisaClient, expiry_dates: list[int]) -> dict:
+def _transform_5paisa_to_nse_format(client: FivePaisaClient, num_expiries: int) -> dict:
     """
     Fetch option chain from 5paisa and transform to NSE-like format.
 
@@ -83,26 +101,48 @@ def _transform_5paisa_to_nse_format(client: FivePaisaClient, expiry_dates: list[
       }
     }
     """
+    # Get expiry dates from API (returns timestamps in milliseconds)
+    expiry_response = client.get_expiry("N", "NIFTY")
+    print(f"[debug] get_expiry response: {expiry_response}")
+
+    # Handle different response formats
+    if isinstance(expiry_response, dict) and "Expiry" in expiry_response:
+        expiry_list = expiry_response["Expiry"]
+    elif isinstance(expiry_response, list):
+        expiry_list = expiry_response
+    else:
+        raise FetchError(f"Unexpected expiry response format: {type(expiry_response)}")
+
+    # Take first N expiries
+    expiry_timestamps = expiry_list[:num_expiries]
+    print(f"[debug] Using expiries: {expiry_timestamps}")
+
     all_data = []
     spot_price = None
+    expiry_dates_nse = []
 
-    for exp_date in expiry_dates:
+    for exp_ts in expiry_timestamps:
         try:
-            # 5paisa get_option_chain(exchange, symbol, expiry_as_int)
-            chain = client.get_option_chain("N", "NIFTY", exp_date)
+            # 5paisa get_option_chain(exchange, symbol, expiry_timestamp)
+            chain = client.get_option_chain("N", "NIFTY", exp_ts)
+            print(f"[debug] Option chain for {exp_ts}: {type(chain)}, keys={chain.keys() if isinstance(chain, dict) else 'list'}")
 
             if not chain:
                 continue
 
-            expiry_str = _format_expiry_nse_style(exp_date)
+            expiry_str = _timestamp_to_nse_style(exp_ts)
+            expiry_dates_nse.append(expiry_str)
 
-            # Process the chain data
-            if isinstance(chain, dict) and "Options" in chain:
-                options = chain["Options"]
+            # Process the chain data - handle various response formats
+            if isinstance(chain, dict):
+                # Could be {"Options": [...]} or {"data": [...]} or direct list
+                options = chain.get("Options") or chain.get("data") or chain.get("OptionChain") or []
             elif isinstance(chain, list):
                 options = chain
             else:
                 options = []
+
+            print(f"[debug] Processing {len(options)} options for expiry {expiry_str}")
 
             # Group by strike price
             strikes = {}
@@ -145,7 +185,7 @@ def _transform_5paisa_to_nse_format(client: FivePaisaClient, expiry_dates: list[
                 all_data.append(entry)
 
         except Exception as e:
-            print(f"[warn] Failed to fetch expiry {exp_date}: {e}")
+            print(f"[warn] Failed to fetch expiry {exp_ts}: {e}")
             continue
 
     if not all_data:
@@ -169,7 +209,7 @@ def _transform_5paisa_to_nse_format(client: FivePaisaClient, expiry_dates: list[
     return {
         "records": {
             "underlyingValue": float(spot_price),
-            "expiryDates": [_format_expiry_nse_style(d) for d in expiry_dates],
+            "expiryDates": expiry_dates_nse,
             "data": all_data,
         }
     }
@@ -183,18 +223,20 @@ def fetch_option_chain() -> dict:
     Raises FetchError if authentication or fetch fails.
     """
     try:
-        cred = _get_credentials()
+        cred, login = _get_credentials()
         client = FivePaisaClient(cred=cred)
 
-        # Get OAuth token - requires a one-time manual login to get response token
-        # For automated use, we'll try direct access which may work for some endpoints
-        # If this fails, user needs to set up TOTP/OAuth properly
+        # TOTP-based login for automated access
+        # Generate current 6-digit TOTP from secret
+        totp_code = _generate_totp(login["TOTP_SECRET"])
+        client.get_totp_session(
+            login["CLIENT_CODE"],
+            totp_code,
+            login["PIN"]
+        )
 
-        # Get the next N expiry dates
-        expiry_dates = _get_expiry_dates(NUM_EXPIRIES)
-
-        # Fetch and transform
-        return _transform_5paisa_to_nse_format(client, expiry_dates)
+        # Fetch and transform (API provides expiry list)
+        return _transform_5paisa_to_nse_format(client, NUM_EXPIRIES)
 
     except FetchError:
         raise
