@@ -21,3 +21,36 @@ footer { padding: 16px 24px; color: #94a3b8; font-size: 12px; }
 .compare-item { display: inline-flex; align-items: center; gap: 4px; background: #334155; padding: 4px 8px; border-radius: 4px; }
 .compare-item input { margin: 0; }
 .compare-item label { color: #e2e8f0; font-size: 13px; cursor: pointer; }
+
+/* Key Levels Summary Cards */
+.key-levels-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+.key-level-card { background: #1e293b; border-radius: 8px; padding: 16px; border-left: 4px solid #3b82f6; }
+.key-level-card.next-expiry { border-left-color: #8b5cf6; }
+.card-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.card-title { font-size: 14px; font-weight: 600; color: #e2e8f0; }
+.card-expiry { font-size: 12px; color: #94a3b8; background: #334155; padding: 2px 8px; border-radius: 4px; }
+.card-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.metric { padding: 8px; background: #0f172a; border-radius: 4px; }
+.metric-label { font-size: 11px; color: #94a3b8; text-transform: uppercase; }
+.metric-value { font-size: 16px; font-weight: 600; color: #e2e8f0; }
+.metric-sub { font-size: 11px; color: #64748b; }
+.metric.resistance .metric-value { color: #ef4444; }
+.metric.support .metric-value { color: #22c55e; }
+.metric.bullish .metric-value { color: #22c55e; }
+.metric.bearish .metric-value { color: #ef4444; }
+.metric.rangebound .metric-value { color: #f59e0b; }
+.card-verdict { margin-top: 12px; padding: 8px; background: #0f172a; border-radius: 4px; text-align: center; }
+.verdict-label { font-size: 11px; color: #94a3b8; }
+.verdict-value { font-size: 18px; font-weight: 700; }
+.verdict-bullish { color: #22c55e; }
+.verdict-bearish { color: #ef4444; }
+.verdict-rangebound { color: #f59e0b; }
+
+/* Section header with toggle */
+.section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; flex-wrap: wrap; gap: 8px; }
+.section-header h2 { margin: 0; }
+.view-toggle { display: flex; gap: 12px; }
+.view-toggle label { display: flex; align-items: center; gap: 4px; font-size: 13px; color: #94a3b8; cursor: pointer; }
+.view-toggle input { margin: 0; }
+
+#keyLevelsSection { background: transparent; padding: 0; }
