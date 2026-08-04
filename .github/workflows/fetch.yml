@@ -31,6 +31,13 @@ jobs:
 
       - name: Run fetch cycle
         run: python -m nifty_oc.main
+        env:
+          FIVEPAISA_APP_NAME: ${{ secrets.FIVEPAISA_APP_NAME }}
+          FIVEPAISA_APP_SOURCE: ${{ secrets.FIVEPAISA_APP_SOURCE }}
+          FIVEPAISA_USER_ID: ${{ secrets.FIVEPAISA_USER_ID }}
+          FIVEPAISA_PASSWORD: ${{ secrets.FIVEPAISA_PASSWORD }}
+          FIVEPAISA_USER_KEY: ${{ secrets.FIVEPAISA_USER_KEY }}
+          FIVEPAISA_ENCRYPTION_KEY: ${{ secrets.FIVEPAISA_ENCRYPTION_KEY }}
 
       - name: Commit data if changed
         run: |
