@@ -1,7 +1,10 @@
 "use strict";
 
 const DATA_ROOTS = ["../data", "./sample"];
+const ATM_RANGE = 500; // Show strikes within +/- 500 of spot
 let globalIndex = null;
+let currentFeed = null;
+let allExpiryFeeds = {};
 
 async function fetchJson(path) {
   for (const root of DATA_ROOTS) {
@@ -28,6 +31,12 @@ function option(value) {
   return o;
 }
 
+function formatNumber(num) {
+  if (num >= 100000) return (num / 100000).toFixed(1) + "L";
+  if (num >= 1000) return (num / 1000).toFixed(1) + "K";
+  return num.toString();
+}
+
 async function loadIndex() {
   globalIndex = await fetchJson("index.json");
   const daySel = document.getElementById("daySelect");
@@ -40,6 +49,11 @@ async function loadIndex() {
   if (globalIndex.days.length) daySel.value = globalIndex.days[globalIndex.days.length - 1].trade_date;
   populateExpiries(globalIndex);
   updateCompareCheckboxes();
+
+  // Set up view toggle
+  document.querySelectorAll('input[name="viewMode"]').forEach(radio => {
+    radio.onchange = () => renderWalls(currentFeed);
+  });
 }
 
 function populateExpiries(idx) {
@@ -102,21 +116,195 @@ async function renderSelected() {
   const expiry = document.getElementById("expirySelect").value;
   if (!day || !expiry) return;
 
-  const feed = await fetchJson(`${day}/${expiry}.json`);
-  document.getElementById("updated").textContent = "Updated: " + (feed.meta.updated_ist || "");
-  renderWalls(feed);
-  renderBuildup(feed);
+  // Load current expiry
+  currentFeed = await fetchJson(`${day}/${expiry}.json`);
+  document.getElementById("updated").textContent = "Updated: " + (currentFeed.meta.updated_ist || "");
+
+  // Load all expiries for key levels cards
+  const dayEntry = globalIndex.days.find(d => d.trade_date === day);
+  allExpiryFeeds = {};
+  if (dayEntry) {
+    for (const exp of dayEntry.expiries.slice(0, 2)) { // Current + next expiry
+      try {
+        allExpiryFeeds[exp] = await fetchJson(`${day}/${exp}.json`);
+      } catch (e) { /* skip if not available */ }
+    }
+  }
+
+  renderKeyLevels();
+  renderWalls(currentFeed);
+  renderBuildup(currentFeed);
 
   const compareDays = getSelectedCompareDays();
-  await renderTimelineWithCompare(feed, day, expiry, compareDays);
+  await renderTimelineWithCompare(currentFeed, day, expiry, compareDays);
+}
+
+function findKeyLevels(feed) {
+  if (!feed || !feed.strikes || feed.strikes.length === 0) return null;
+
+  const timeline = feed.timeline || [];
+  const latest = timeline[timeline.length - 1] || {};
+
+  // Find max CE OI (resistance) and max PE OI (support)
+  let maxCeOi = 0, maxPeOi = 0, resistance = 0, support = 0;
+  feed.strikes.forEach(s => {
+    if (s.ce_oi > maxCeOi) { maxCeOi = s.ce_oi; resistance = s.strike; }
+    if (s.pe_oi > maxPeOi) { maxPeOi = s.pe_oi; support = s.strike; }
+  });
+
+  return {
+    spot: latest.spot || 0,
+    pcr: latest.pcr || 0,
+    maxPain: latest.max_pain || 0,
+    resistance,
+    resistanceOi: maxCeOi,
+    support,
+    supportOi: maxPeOi,
+    verdict: determineVerdict(latest.spot, latest.max_pain, latest.pcr)
+  };
+}
+
+function determineVerdict(spot, maxPain, pcr) {
+  if (!spot || !maxPain) return "N/A";
+  if (spot > maxPain && pcr > 1.0) return "Bullish";
+  if (spot < maxPain && pcr < 0.8) return "Bearish";
+  return "Rangebound";
+}
+
+function createKeyLevelCard(expiry, levels, isNext) {
+  const card = document.createElement("div");
+  card.className = "key-level-card" + (isNext ? " next-expiry" : "");
+
+  const header = document.createElement("div");
+  header.className = "card-header";
+
+  const title = document.createElement("span");
+  title.className = "card-title";
+  title.textContent = isNext ? "NEXT EXPIRY" : "CURRENT EXPIRY";
+
+  const expiryBadge = document.createElement("span");
+  expiryBadge.className = "card-expiry";
+  expiryBadge.textContent = expiry;
+
+  header.appendChild(title);
+  header.appendChild(expiryBadge);
+  card.appendChild(header);
+
+  const metrics = document.createElement("div");
+  metrics.className = "card-metrics";
+
+  // Spot
+  const spotMetric = createMetric("Spot", levels.spot.toFixed(2), "");
+  metrics.appendChild(spotMetric);
+
+  // Max Pain
+  const mpMetric = createMetric("Max Pain", levels.maxPain.toString(), "");
+  metrics.appendChild(mpMetric);
+
+  // Resistance
+  const resMetric = createMetric("Resistance", levels.resistance.toString(), "CE OI: " + formatNumber(levels.resistanceOi), "resistance");
+  metrics.appendChild(resMetric);
+
+  // Support
+  const supMetric = createMetric("Support", levels.support.toString(), "PE OI: " + formatNumber(levels.supportOi), "support");
+  metrics.appendChild(supMetric);
+
+  // PCR
+  const pcrMetric = createMetric("PCR", levels.pcr.toFixed(2), levels.pcr > 1 ? "Bullish bias" : levels.pcr < 0.8 ? "Bearish bias" : "Neutral");
+  metrics.appendChild(pcrMetric);
+
+  card.appendChild(metrics);
+
+  // Verdict
+  const verdictDiv = document.createElement("div");
+  verdictDiv.className = "card-verdict";
+
+  const verdictLabel = document.createElement("div");
+  verdictLabel.className = "verdict-label";
+  verdictLabel.textContent = "VERDICT";
+
+  const verdictValue = document.createElement("div");
+  verdictValue.className = "verdict-value verdict-" + levels.verdict.toLowerCase();
+  verdictValue.textContent = levels.verdict;
+
+  verdictDiv.appendChild(verdictLabel);
+  verdictDiv.appendChild(verdictValue);
+  card.appendChild(verdictDiv);
+
+  return card;
+}
+
+function createMetric(label, value, sub, extraClass) {
+  const div = document.createElement("div");
+  div.className = "metric" + (extraClass ? " " + extraClass : "");
+
+  const labelEl = document.createElement("div");
+  labelEl.className = "metric-label";
+  labelEl.textContent = label;
+
+  const valueEl = document.createElement("div");
+  valueEl.className = "metric-value";
+  valueEl.textContent = value;
+
+  div.appendChild(labelEl);
+  div.appendChild(valueEl);
+
+  if (sub) {
+    const subEl = document.createElement("div");
+    subEl.className = "metric-sub";
+    subEl.textContent = sub;
+    div.appendChild(subEl);
+  }
+
+  return div;
+}
+
+function renderKeyLevels() {
+  const container = document.getElementById("keyLevelsGrid");
+  clearNode(container);
+
+  const expiries = Object.keys(allExpiryFeeds).sort();
+
+  expiries.forEach((expiry, idx) => {
+    const feed = allExpiryFeeds[expiry];
+    const levels = findKeyLevels(feed);
+    if (levels) {
+      const card = createKeyLevelCard(expiry, levels, idx > 0);
+      container.appendChild(card);
+    }
+  });
 }
 
 function renderWalls(feed) {
-  const strikes = feed.strikes.map((r) => r.strike);
+  if (!feed) return;
+
+  const viewMode = document.querySelector('input[name="viewMode"]:checked').value;
+  let strikesToShow = feed.strikes;
+
+  if (viewMode === "atm") {
+    // Get spot from timeline
+    const timeline = feed.timeline || [];
+    const latest = timeline[timeline.length - 1] || {};
+    const spot = latest.spot || 24500; // fallback
+
+    // Filter to ATM range
+    strikesToShow = feed.strikes.filter(s =>
+      s.strike >= (spot - ATM_RANGE) && s.strike <= (spot + ATM_RANGE)
+    );
+  }
+
+  const strikes = strikesToShow.map((r) => r.strike);
   Plotly.newPlot("wallsChart", [
-    { x: strikes, y: feed.strikes.map((r) => r.ce_oi), name: "CE OI (resistance)", type: "bar", marker: { color: "#ef4444" } },
-    { x: strikes, y: feed.strikes.map((r) => r.pe_oi), name: "PE OI (support)", type: "bar", marker: { color: "#22c55e" } },
-  ], { barmode: "group", paper_bgcolor: "#1e293b", plot_bgcolor: "#1e293b", font: { color: "#e2e8f0" }, margin: { t: 10 } }, { responsive: true });
+    { x: strikes, y: strikesToShow.map((r) => r.ce_oi), name: "CE OI (resistance)", type: "bar", marker: { color: "#ef4444" } },
+    { x: strikes, y: strikesToShow.map((r) => r.pe_oi), name: "PE OI (support)", type: "bar", marker: { color: "#22c55e" } },
+  ], {
+    barmode: "group",
+    paper_bgcolor: "#1e293b",
+    plot_bgcolor: "#1e293b",
+    font: { color: "#e2e8f0" },
+    margin: { t: 10 },
+    xaxis: { title: viewMode === "atm" ? "Strikes (ATM ± 500)" : "Strikes (Full Range)" }
+  }, { responsive: true });
 }
 
 async function renderTimelineWithCompare(primaryFeed, primaryDay, expiry, compareDays) {
@@ -228,12 +416,12 @@ function renderBuildup(feed) {
   feed.strikes.forEach((r) => {
     const tr = document.createElement("tr");
     tr.appendChild(cell(r.strike));
-    tr.appendChild(cell(r.ce_oi));
-    tr.appendChild(cell(r.ce_chg_oi));
+    tr.appendChild(cell(formatNumber(r.ce_oi)));
+    tr.appendChild(cell(formatNumber(r.ce_chg_oi)));
     tr.appendChild(cell(r.ce_buildup, buildupClass(r.ce_buildup)));
     tr.appendChild(cell(r.pe_buildup, buildupClass(r.pe_buildup)));
-    tr.appendChild(cell(r.pe_chg_oi));
-    tr.appendChild(cell(r.pe_oi));
+    tr.appendChild(cell(formatNumber(r.pe_chg_oi)));
+    tr.appendChild(cell(formatNumber(r.pe_oi)));
     tr.appendChild(cell(r.zone_200pt));
     table.appendChild(tr);
   });
