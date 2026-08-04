@@ -48,6 +48,9 @@ jobs:
           FIVEPAISA_PASSWORD: ${{ secrets.FIVEPAISA_PASSWORD }}
           FIVEPAISA_USER_KEY: ${{ secrets.FIVEPAISA_USER_KEY }}
           FIVEPAISA_ENCRYPTION_KEY: ${{ secrets.FIVEPAISA_ENCRYPTION_KEY }}
+          FIVEPAISA_CLIENT_CODE: ${{ secrets.FIVEPAISA_CLIENT_CODE }}
+          FIVEPAISA_TOTP_SECRET: ${{ secrets.FIVEPAISA_TOTP_SECRET }}
+          FIVEPAISA_PIN: ${{ secrets.FIVEPAISA_PIN }}
 
       - name: Commit data if changed
         run: |
