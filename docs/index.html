@@ -17,7 +17,19 @@
     </div>
   </header>
   <main>
-    <section><h2>Support / Resistance Walls (CE vs PE OI)</h2><div id="wallsChart"></div></section>
+    <section id="keyLevelsSection">
+      <div class="key-levels-grid" id="keyLevelsGrid"></div>
+    </section>
+    <section>
+      <div class="section-header">
+        <h2>Support / Resistance Walls (CE vs PE OI)</h2>
+        <div class="view-toggle">
+          <label><input type="radio" name="viewMode" value="atm" checked> ATM View</label>
+          <label><input type="radio" name="viewMode" value="full"> Full Range</label>
+        </div>
+      </div>
+      <div id="wallsChart"></div>
+    </section>
     <section>
       <h2>Day Timeline — Spot vs Max Pain vs PCR</h2>
       <div id="compareControls" class="compare-controls"></div>
