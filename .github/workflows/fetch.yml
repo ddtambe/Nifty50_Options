@@ -2,11 +2,33 @@ name: fetch-nifty-option-chain
 
 on:
   schedule:
-    # Every 15 min during IST market window (03:45–10:00 UTC).
-    - cron: "*/15 3-10 * * 1-5"
-    # Fine-grained tail to capture ~15:25 & ~15:30 IST (09:55 & 10:00 UTC).
-    - cron: "55,59 9 * * 1-5"
-    - cron: "0 10 * * 1-5"
+    # Hardcoded every 15 min from 9:15 AM to 3:30 PM IST (Mon-Fri)
+    - cron: "45 3 * * 1-5"   # 9:15 AM IST
+    - cron: "0 4 * * 1-5"    # 9:30 AM IST
+    - cron: "15 4 * * 1-5"   # 9:45 AM IST
+    - cron: "30 4 * * 1-5"   # 10:00 AM IST
+    - cron: "45 4 * * 1-5"   # 10:15 AM IST
+    - cron: "0 5 * * 1-5"    # 10:30 AM IST
+    - cron: "15 5 * * 1-5"   # 10:45 AM IST
+    - cron: "30 5 * * 1-5"   # 11:00 AM IST
+    - cron: "45 5 * * 1-5"   # 11:15 AM IST
+    - cron: "0 6 * * 1-5"    # 11:30 AM IST
+    - cron: "15 6 * * 1-5"   # 11:45 AM IST
+    - cron: "30 6 * * 1-5"   # 12:00 PM IST
+    - cron: "45 6 * * 1-5"   # 12:15 PM IST
+    - cron: "0 7 * * 1-5"    # 12:30 PM IST
+    - cron: "15 7 * * 1-5"   # 12:45 PM IST
+    - cron: "30 7 * * 1-5"   # 1:00 PM IST
+    - cron: "45 7 * * 1-5"   # 1:15 PM IST
+    - cron: "0 8 * * 1-5"    # 1:30 PM IST
+    - cron: "15 8 * * 1-5"   # 1:45 PM IST
+    - cron: "30 8 * * 1-5"   # 2:00 PM IST
+    - cron: "45 8 * * 1-5"   # 2:15 PM IST
+    - cron: "0 9 * * 1-5"    # 2:30 PM IST
+    - cron: "15 9 * * 1-5"   # 2:45 PM IST
+    - cron: "30 9 * * 1-5"   # 3:00 PM IST
+    - cron: "45 9 * * 1-5"   # 3:15 PM IST
+    - cron: "0 10 * * 1-5"   # 3:30 PM IST
   workflow_dispatch:
     inputs:
       force:
