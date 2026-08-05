@@ -131,6 +131,7 @@ async function renderSelected() {
     }
   }
 
+  renderBrewing(currentFeed);
   renderKeyLevels();
   renderWalls(currentFeed);
   renderOiTimeline(currentFeed);
@@ -275,6 +276,77 @@ function renderKeyLevels() {
       container.appendChild(card);
     }
   });
+}
+
+const DIRECTION_LABEL = {
+  BULLISH: "BULLISH — favor CE",
+  BEARISH: "BEARISH — favor PE",
+  PIN: "PIN — rangebound",
+};
+
+function pctStr(frac) {
+  return Math.round(frac * 100) + "%";
+}
+
+function brewingWindowText(s, w) {
+  if (s.direction === "PIN") {
+    const parts = [];
+    if (("ce_pct_" + w) in s) parts.push("CE +" + pctStr(s["ce_pct_" + w]));
+    if (("pe_pct_" + w) in s) parts.push("PE +" + pctStr(s["pe_pct_" + w]));
+    return w + ": " + parts.join(", ");
+  }
+  const past = s["oi_past_" + w];
+  return w + ": " + formatNumber(past) + "→" + formatNumber(s.oi_now)
+    + " (+" + pctStr(s["pct_" + w]) + ", +" + formatNumber(s["abs_" + w]) + ")";
+}
+
+function createBrewingCard(s) {
+  const card = document.createElement("div");
+  card.className = "brewing-card " + s.direction.toLowerCase();
+
+  const head = document.createElement("div");
+  head.className = "brewing-head";
+
+  const strikeEl = document.createElement("span");
+  strikeEl.className = "brewing-strike";
+  strikeEl.textContent = s.strike + (s.leg && s.leg !== "BOTH" ? " " + s.leg : "");
+  head.appendChild(strikeEl);
+
+  const badge = document.createElement("span");
+  badge.className = "brewing-conf conf-" + s.confidence.toLowerCase();
+  badge.textContent = s.confidence;
+  head.appendChild(badge);
+  card.appendChild(head);
+
+  const dir = document.createElement("div");
+  dir.className = "brewing-dir";
+  dir.textContent = DIRECTION_LABEL[s.direction] || s.direction;
+  card.appendChild(dir);
+
+  const detail = document.createElement("div");
+  detail.className = "brewing-detail";
+  s.windows.forEach((w) => {
+    const line = document.createElement("div");
+    line.textContent = brewingWindowText(s, w);
+    detail.appendChild(line);
+  });
+  card.appendChild(detail);
+
+  return card;
+}
+
+function renderBrewing(feed) {
+  const container = document.getElementById("brewingGrid");
+  clearNode(container);
+  const signals = (feed && feed.brewing) || [];
+  if (signals.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "brewing-empty";
+    empty.textContent = "No strong OI surges right now.";
+    container.appendChild(empty);
+    return;
+  }
+  signals.forEach((s) => container.appendChild(createBrewingCard(s)));
 }
 
 function renderWalls(feed) {
