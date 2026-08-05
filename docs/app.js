@@ -133,6 +133,8 @@ async function renderSelected() {
 
   renderKeyLevels();
   renderWalls(currentFeed);
+  renderOiTimeline(currentFeed);
+  renderOiHeatmaps(currentFeed);
   renderBuildup(currentFeed);
 
   const compareDays = getSelectedCompareDays();
@@ -305,6 +307,103 @@ function renderWalls(feed) {
     margin: { t: 10 },
     xaxis: { title: viewMode === "atm" ? "Strikes (ATM ± 500)" : "Strikes (Full Range)" }
   }, { responsive: true });
+}
+
+function renderOiTimeline(feed) {
+  if (!feed || !feed.timeline) return;
+
+  const t = feed.timeline.map((p) => p.t);
+  const ceOi = feed.timeline.map((p) => p.ce_oi_total || 0);
+  const peOi = feed.timeline.map((p) => p.pe_oi_total || 0);
+
+  Plotly.newPlot("oiTimelineChart", [
+    { x: t, y: ceOi, name: "Total CE OI", type: "scatter", mode: "lines+markers", line: { color: "#ef4444", width: 2 } },
+    { x: t, y: peOi, name: "Total PE OI", type: "scatter", mode: "lines+markers", line: { color: "#22c55e", width: 2 } },
+  ], {
+    paper_bgcolor: "#1e293b",
+    plot_bgcolor: "#1e293b",
+    font: { color: "#e2e8f0" },
+    margin: { t: 10 },
+    yaxis: { title: "Open Interest" },
+    xaxis: { title: "Time (15-min intervals)" },
+    legend: { orientation: "h", y: -0.2 }
+  }, { responsive: true });
+}
+
+function renderOiHeatmaps(feed) {
+  const st = feed && feed.strikes_timeline;
+  if (!st || st.length === 0) {
+    Plotly.purge("ceHeatmap");
+    Plotly.purge("peHeatmap");
+    return;
+  }
+
+  // X-axis: timestamps in order
+  const times = st.map((snap) => snap.t);
+
+  // Y-axis: union of all strikes across snapshots, sorted ascending
+  const strikeSet = new Set();
+  st.forEach((snap) => snap.rows.forEach((r) => strikeSet.add(r.strike)));
+  const strikes = Array.from(strikeSet).sort((a, b) => a - b);
+
+  // Per-snapshot lookup: strike -> {ce_oi, pe_oi}
+  const snapMaps = st.map((snap) => {
+    const m = {};
+    snap.rows.forEach((r) => { m[r.strike] = r; });
+    return m;
+  });
+
+  // Build z (ΔOI) and customdata (absolute OI) matrices, rows=strikes, cols=times
+  const buildMatrices = (leg) => {
+    const z = [];
+    const abs = [];
+    for (const strike of strikes) {
+      const zRow = [];
+      const absRow = [];
+      let prev = null;
+      for (let ti = 0; ti < snapMaps.length; ti++) {
+        const cur = snapMaps[ti][strike] ? snapMaps[ti][strike][leg] : 0;
+        absRow.push(cur);
+        zRow.push(prev === null ? 0 : cur - prev); // first column = 0 (no prior)
+        prev = cur;
+      }
+      z.push(zRow);
+      abs.push(absRow);
+    }
+    return { z, abs };
+  };
+
+  const diverging = [
+    [0, "#ef4444"],   // strong negative -> red
+    [0.5, "#1e293b"], // zero -> neutral (theme bg)
+    [1, "#22c55e"],   // strong positive -> green
+  ];
+
+  const plotLeg = (divId, leg, title) => {
+    const { z, abs } = buildMatrices(leg);
+    Plotly.newPlot(divId, [{
+      type: "heatmap",
+      x: times,
+      y: strikes,
+      z: z,
+      customdata: abs,
+      colorscale: diverging,
+      zmid: 0,
+      hovertemplate:
+        "Strike: %{y}<br>Time: %{x}<br>ΔOI: %{z:,}<br>Total OI: %{customdata:,}<extra></extra>",
+      colorbar: { title: "ΔOI" },
+    }], {
+      paper_bgcolor: "#1e293b",
+      plot_bgcolor: "#1e293b",
+      font: { color: "#e2e8f0" },
+      margin: { t: 10, l: 60 },
+      xaxis: { title: "Time (15-min intervals)" },
+      yaxis: { title: "Strike", type: "category" },
+    }, { responsive: true });
+  };
+
+  plotLeg("ceHeatmap", "ce_oi", "CE");
+  plotLeg("peHeatmap", "pe_oi", "PE");
 }
 
 async function renderTimelineWithCompare(primaryFeed, primaryDay, expiry, compareDays) {
