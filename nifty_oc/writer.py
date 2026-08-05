@@ -1,7 +1,15 @@
 """All file output: CSV (append/rewrite) and JSON feeds for the web app."""
 import csv
 import json
+import logging
 import os
+
+from nifty_oc import signals
+from nifty_oc.config import (
+    SURGE_PCT_THRESHOLD, SURGE_ABS_THRESHOLD, SURGE_WINDOWS,
+)
+
+_log = logging.getLogger(__name__)
 
 SUMMARY_HEADER = [
     "timestamp_ist", "trade_date", "expiry", "spot", "atm", "pcr", "max_pain",
@@ -76,7 +84,8 @@ def write_json_feed(snapshot: dict, data_dir: str) -> None:
             with open(path) as f:
                 feed = json.load(f)
         else:
-            feed = {"meta": {}, "timeline": [], "strikes": [], "strikes_timeline": []}
+            feed = {"meta": {}, "timeline": [], "strikes": [],
+                    "strikes_timeline": [], "brewing": []}
         feed["meta"] = {
             "trade_date": snapshot["trade_date"], "expiry": e["expiry"],
             "updated_ist": snapshot["timestamp"],
@@ -94,6 +103,14 @@ def write_json_feed(snapshot: dict, data_dir: str) -> None:
             ],
         })
         feed["strikes"] = e["display_rows"]
+        try:
+            feed["brewing"] = signals.detect_brewing(
+                feed["strikes_timeline"], snapshot["spot"],
+                SURGE_PCT_THRESHOLD, SURGE_ABS_THRESHOLD, SURGE_WINDOWS,
+            )
+        except Exception:  # detection must never break the fetch/write
+            _log.exception("brewing detection failed for %s", e["expiry"])
+            feed["brewing"] = []
         with open(path, "w") as f:
             json.dump(feed, f)
 
