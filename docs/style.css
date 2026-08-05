@@ -55,6 +55,25 @@ footer { padding: 16px 24px; color: #94a3b8; font-size: 12px; }
 
 #keyLevelsSection { background: transparent; padding: 0; }
 
+/* Brewing Moves panel */
+.brewing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+.brewing-card { background: #0f172a; border-radius: 8px; padding: 12px; border-left: 4px solid #64748b; }
+.brewing-card.bullish { border-left-color: #22c55e; }
+.brewing-card.bearish { border-left-color: #ef4444; }
+.brewing-card.pin { border-left-color: #f59e0b; }
+.brewing-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.brewing-strike { font-size: 16px; font-weight: 700; color: #e2e8f0; }
+.brewing-conf { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px; }
+.conf-high { background: #14532d; color: #4ade80; }
+.conf-medium { background: #334155; color: #cbd5e1; }
+.brewing-dir { font-size: 13px; font-weight: 600; margin-bottom: 6px; }
+.brewing-card.bullish .brewing-dir { color: #22c55e; }
+.brewing-card.bearish .brewing-dir { color: #ef4444; }
+.brewing-card.pin .brewing-dir { color: #f59e0b; }
+.brewing-detail { font-size: 12px; color: #94a3b8; }
+.brewing-detail div { margin: 2px 0; }
+.brewing-empty { color: #94a3b8; font-size: 13px; padding: 4px; }
+
 /* OI Heatmap */
 .chart-hint { font-size: 12px; color: #94a3b8; margin: 0 0 12px; }
 .heatmap-title { font-size: 13px; margin: 12px 0 4px; }
