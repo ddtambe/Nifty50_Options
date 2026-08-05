@@ -64,6 +64,26 @@ def test_write_json_feed_accumulates_timeline(tmp_path):
     assert feed["strikes"][0]["strike"] == 24800
 
 
+def test_write_json_feed_accumulates_strikes_timeline(tmp_path):
+    # First snapshot
+    writer.write_json_feed(sample_snapshot(), str(tmp_path))
+    # Second snapshot with different OI values for the same strike
+    snap2 = sample_snapshot()
+    snap2["timestamp"] = "2026-07-29 09:45"
+    snap2["expiries"][0]["display_rows"][0]["ce_oi"] = 500000
+    snap2["expiries"][0]["display_rows"][0]["pe_oi"] = 400000
+    writer.write_json_feed(snap2, str(tmp_path))
+
+    feed = json.loads((tmp_path / "2026-07-29" / "2026-07-31.json").read_text())
+    st = feed["strikes_timeline"]
+    assert len(st) == 2                                  # one entry per snapshot
+    assert st[0]["t"] == "2026-07-29 09:30"
+    assert st[1]["t"] == "2026-07-29 09:45"
+    # Each entry stores minimal per-strike OI
+    assert st[0]["rows"][0] == {"strike": 24800, "ce_oi": 342100, "pe_oi": 288900}
+    assert st[1]["rows"][0] == {"strike": 24800, "ce_oi": 500000, "pe_oi": 400000}
+
+
 def test_write_index_lists_days_and_expiries(tmp_path):
     writer.write_json_feed(sample_snapshot(), str(tmp_path))
     writer.write_index(str(tmp_path))
