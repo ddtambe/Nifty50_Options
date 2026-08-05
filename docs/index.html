@@ -35,6 +35,18 @@
       <div id="compareControls" class="compare-controls"></div>
       <div id="timelineChart"></div>
     </section>
+    <section>
+      <h2>Total OI Over Time (every 15 min) — CE vs PE</h2>
+      <div id="oiTimelineChart"></div>
+    </section>
+    <section>
+      <h2>Per-Strike OI Change Heatmap (ΔOI over time)</h2>
+      <p class="chart-hint">Green = OI added, Red = OI reduced. Hover any cell for exact ΔOI and total OI. Brightening row over time = OI stacking at that strike.</p>
+      <h3 class="heatmap-title ce">Call (CE) ΔOI — resistance building</h3>
+      <div id="ceHeatmap"></div>
+      <h3 class="heatmap-title pe">Put (PE) ΔOI — support building</h3>
+      <div id="peHeatmap"></div>
+    </section>
     <section><h2>Buildup Map (latest snapshot)</h2><div id="buildupTable"></div></section>
   </main>
   <footer>
