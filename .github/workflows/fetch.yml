@@ -3,7 +3,7 @@ name: fetch-nifty-option-chain
 on:
   schedule:
     #- cron: "*/15 3-10 * * 1-5"
-    - cron: cron: "*/5 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 permissions:
