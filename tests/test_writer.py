@@ -84,6 +84,30 @@ def test_write_json_feed_accumulates_strikes_timeline(tmp_path):
     assert st[1]["rows"][0] == {"strike": 24800, "ce_oi": 500000, "pe_oi": 400000}
 
 
+def test_write_json_feed_stores_brewing(tmp_path):
+    # Five snapshots with PE surging at 24800 (present in sample_snapshot).
+    pe_series = [6_000_000, 7_000_000, 8_000_000, 10_000_000, 13_000_000]
+    times = ["09:15", "09:30", "09:45", "10:00", "10:15"]
+    for t, pe in zip(times, pe_series):
+        snap = sample_snapshot()
+        snap["timestamp"] = f"2026-07-29 {t}"
+        snap["expiries"][0]["display_rows"][0]["pe_oi"] = pe
+        snap["expiries"][0]["display_rows"][0]["ce_oi"] = 1_000_000
+        writer.write_json_feed(snap, str(tmp_path))
+
+    feed = json.loads((tmp_path / "2026-07-29" / "2026-07-31.json").read_text())
+    assert "brewing" in feed
+    assert any(s["leg"] == "PE" and s["direction"] == "BULLISH"
+               for s in feed["brewing"])
+
+
+def test_write_json_feed_brewing_empty_early(tmp_path):
+    # A single snapshot -> not enough history -> brewing is an empty list.
+    writer.write_json_feed(sample_snapshot(), str(tmp_path))
+    feed = json.loads((tmp_path / "2026-07-29" / "2026-07-31.json").read_text())
+    assert feed["brewing"] == []
+
+
 def test_write_index_lists_days_and_expiries(tmp_path):
     writer.write_json_feed(sample_snapshot(), str(tmp_path))
     writer.write_index(str(tmp_path))
