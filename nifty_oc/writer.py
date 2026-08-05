@@ -76,7 +76,7 @@ def write_json_feed(snapshot: dict, data_dir: str) -> None:
             with open(path) as f:
                 feed = json.load(f)
         else:
-            feed = {"meta": {}, "timeline": [], "strikes": []}
+            feed = {"meta": {}, "timeline": [], "strikes": [], "strikes_timeline": []}
         feed["meta"] = {
             "trade_date": snapshot["trade_date"], "expiry": e["expiry"],
             "updated_ist": snapshot["timestamp"],
@@ -84,6 +84,14 @@ def write_json_feed(snapshot: dict, data_dir: str) -> None:
         feed["timeline"].append({
             "t": snapshot["timestamp"], "spot": snapshot["spot"],
             "pcr": e["pcr"], "max_pain": e["max_pain"],
+            "ce_oi_total": e["ce_oi_total"], "pe_oi_total": e["pe_oi_total"],
+        })
+        feed.setdefault("strikes_timeline", []).append({
+            "t": snapshot["timestamp"],
+            "rows": [
+                {"strike": r["strike"], "ce_oi": r["ce_oi"], "pe_oi": r["pe_oi"]}
+                for r in e["display_rows"]
+            ],
         })
         feed["strikes"] = e["display_rows"]
         with open(path, "w") as f:
