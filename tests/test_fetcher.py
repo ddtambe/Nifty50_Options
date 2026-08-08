@@ -95,6 +95,40 @@ class TestFetchOptionChain:
         assert result["records"]["underlyingValue"] == 24812.35
         assert len(result["records"]["data"]) > 0
 
+    def test_fetch_raises_when_spot_unresolvable(self):
+        """Options present but no spot anywhere, and market feed also empty:
+        must raise, NOT silently return the 24000.0 placeholder."""
+        mock_client = MagicMock()
+        mock_client.get_expiry.return_value = [SAMPLE_EXPIRY_TS]
+        mock_client.get_option_chain.return_value = {
+            "Options": [
+                {"StrikeRate": 24800, "CPType": "CE", "OpenInterest": 1000},
+            ]
+        }
+        mock_client.fetch_market_feed_scrip.return_value = []
+
+        with patch.dict(os.environ, MOCK_CREDS):
+            with patch("nifty_oc.fetcher.FivePaisaClient", return_value=mock_client):
+                with pytest.raises(FetchError) as exc_info:
+                    fetch_option_chain()
+        assert "spot" in str(exc_info.value).lower()
+
+    def test_fetch_uses_market_feed_spot_when_chain_lacks_it(self):
+        """No UnderlyingValue in chain, but market feed provides the spot."""
+        mock_client = MagicMock()
+        mock_client.get_expiry.return_value = [SAMPLE_EXPIRY_TS]
+        mock_client.get_option_chain.return_value = {
+            "Options": [
+                {"StrikeRate": 24800, "CPType": "CE", "OpenInterest": 1000},
+            ]
+        }
+        mock_client.fetch_market_feed_scrip.return_value = [{"LastRate": 24777.7}]
+
+        with patch.dict(os.environ, MOCK_CREDS):
+            with patch("nifty_oc.fetcher.FivePaisaClient", return_value=mock_client):
+                result = fetch_option_chain()
+        assert result["records"]["underlyingValue"] == 24777.7
+
     def test_fetch_raises_on_empty_data(self):
         mock_client = MagicMock()
         mock_client.get_expiry.return_value = [SAMPLE_EXPIRY_TS]
