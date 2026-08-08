@@ -378,7 +378,7 @@ function renderWalls(feed) {
     font: { color: "#e2e8f0" },
     margin: { t: 10 },
     xaxis: { title: viewMode === "atm" ? "Strikes (ATM ± 500)" : "Strikes (Full Range)" }
-  }, { responsive: true });
+  }, { responsive: true, scrollZoom: true });
 }
 
 function renderOiTimeline(feed) {
@@ -396,10 +396,11 @@ function renderOiTimeline(feed) {
     plot_bgcolor: "#1e293b",
     font: { color: "#e2e8f0" },
     margin: { t: 10 },
+    dragmode: "pan",
     yaxis: { title: "Open Interest" },
     xaxis: { title: "Time (15-min intervals)" },
     legend: { orientation: "h", y: -0.2 }
-  }, { responsive: true });
+  }, { responsive: true, scrollZoom: true });
 }
 
 function renderOiHeatmaps(feed) {
@@ -471,7 +472,7 @@ function renderOiHeatmaps(feed) {
       margin: { t: 10, l: 60 },
       xaxis: { title: "Time (15-min intervals)" },
       yaxis: { title: "Strike", type: "category" },
-    }, { responsive: true });
+    }, { responsive: true, scrollZoom: true });
   };
 
   plotLeg("ceHeatmap", "ce_oi", "CE");
@@ -557,10 +558,11 @@ async function renderTimelineWithCompare(primaryFeed, primaryDay, expiry, compar
     plot_bgcolor: "#1e293b",
     font: { color: "#e2e8f0" },
     margin: { t: 10 },
+    dragmode: "pan",
     yaxis: { title: "Price" },
     yaxis2: { title: "PCR", overlaying: "y", side: "right" },
     legend: { orientation: "h", y: -0.2 }
-  }, { responsive: true });
+  }, { responsive: true, scrollZoom: true });
 }
 
 function cell(text, className) {
