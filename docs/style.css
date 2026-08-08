@@ -72,6 +72,7 @@ footer { padding: 16px 24px; color: #94a3b8; font-size: 12px; }
 .brewing-card.pin .brewing-dir { color: #f59e0b; }
 .brewing-detail { font-size: 12px; color: #94a3b8; }
 .brewing-detail div { margin: 2px 0; }
+.brewing-time { font-size: 11px; color: #64748b; margin-top: 4px; }
 .brewing-empty { color: #94a3b8; font-size: 13px; padding: 4px; }
 
 /* OI Heatmap */
