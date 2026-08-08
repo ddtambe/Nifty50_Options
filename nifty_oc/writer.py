@@ -32,6 +32,39 @@ def _day_dir(data_dir: str, trade_date: str) -> str:
     return path
 
 
+def _accumulate_brewing_today(existing: list, current: list, ts: str) -> list:
+    """Merge this cycle's live brewing signals into the day's running list.
+
+    Additive only: a signal is never dropped once seen. Each entry records
+    when it first and last fired; when the same signal re-fires stronger, the
+    peak stats replace the old ones but `first_seen` is preserved.
+    """
+    by_key: dict = {}
+    order: list = []
+    for s in existing:
+        key = (s.get("strike"), s.get("leg"), s.get("direction"))
+        by_key[key] = s
+        order.append(key)
+    for s in current:
+        key = (s.get("strike"), s.get("leg"), s.get("direction"))
+        if key in by_key:
+            prev = by_key[key]
+            if signals._max_abs(s) > signals._max_abs(prev):
+                merged = dict(s)
+                merged["first_seen"] = prev.get("first_seen", ts)
+                merged["last_seen"] = ts
+                by_key[key] = merged
+            else:
+                prev["last_seen"] = ts
+        else:
+            entry = dict(s)
+            entry["first_seen"] = ts
+            entry["last_seen"] = ts
+            by_key[key] = entry
+            order.append(key)
+    return [by_key[key] for key in order]
+
+
 def _append_rows(path: str, header: list, rows: list) -> None:
     exists = os.path.exists(path)
     with open(path, "a", newline="") as f:
@@ -85,7 +118,7 @@ def write_json_feed(snapshot: dict, data_dir: str) -> None:
                 feed = json.load(f)
         else:
             feed = {"meta": {}, "timeline": [], "strikes": [],
-                    "strikes_timeline": [], "brewing": []}
+                    "strikes_timeline": [], "brewing": [], "brewing_today": []}
         feed["meta"] = {
             "trade_date": snapshot["trade_date"], "expiry": e["expiry"],
             "updated_ist": snapshot["timestamp"],
@@ -108,9 +141,13 @@ def write_json_feed(snapshot: dict, data_dir: str) -> None:
                 feed["strikes_timeline"], snapshot["spot"],
                 SURGE_PCT_THRESHOLD, SURGE_ABS_THRESHOLD, SURGE_WINDOWS,
             )
+            feed["brewing_today"] = _accumulate_brewing_today(
+                feed.get("brewing_today", []), feed["brewing"], snapshot["timestamp"],
+            )
         except Exception:  # detection must never break the fetch/write
             _log.exception("brewing detection failed for %s", e["expiry"])
             feed["brewing"] = []
+            feed.setdefault("brewing_today", [])
         with open(path, "w") as f:
             json.dump(feed, f)
 
