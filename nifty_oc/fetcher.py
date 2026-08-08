@@ -231,10 +231,13 @@ def _transform_5paisa_to_nse_format(client: FivePaisaClient, num_expiries: int) 
         except:
             pass
 
-    # Default spot if all else fails (should not happen in production)
+    # Never fake the spot: a wrong spot silently corrupts confidence,
+    # max-pain positioning and verdicts. Fail the cycle instead so main.py
+    # skips cleanly rather than publishing garbage.
     if spot_price is None:
-        spot_price = 24000.0
-        print("[warn] Could not fetch spot price, using default")
+        raise FetchError(
+            "Could not resolve NIFTY spot from option chain or market feed"
+        )
 
     return {
         "records": {
