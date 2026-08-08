@@ -441,10 +441,10 @@ function renderOiHeatmaps(feed) {
   // X-axis: timestamps in order
   const times = st.map((snap) => snap.t);
 
-  // Y-axis: union of all strikes across snapshots, sorted ascending
+  // Union of all strikes across snapshots, sorted ascending.
   const strikeSet = new Set();
   st.forEach((snap) => snap.rows.forEach((r) => strikeSet.add(r.strike)));
-  const strikes = Array.from(strikeSet).sort((a, b) => a - b);
+  const allStrikes = Array.from(strikeSet).sort((a, b) => a - b);
 
   // Per-snapshot lookup: strike -> {ce_oi, pe_oi}
   const snapMaps = st.map((snap) => {
@@ -453,8 +453,14 @@ function renderOiHeatmaps(feed) {
     return m;
   });
 
+  // Only show strikes that actually carry OI on this leg — the far-OTM rows
+  // (peak OI below this floor) are empty clutter that squeeze the real band.
+  const MIN_PEAK_OI = 1_000_000;
+  const activeStrikes = (leg) => allStrikes.filter((strike) =>
+    snapMaps.some((m) => m[strike] && m[strike][leg] >= MIN_PEAK_OI));
+
   // Build z (ΔOI) and customdata (absolute OI) matrices, rows=strikes, cols=times
-  const buildMatrices = (leg) => {
+  const buildMatrices = (leg, strikes) => {
     const z = [];
     const abs = [];
     for (const strike of strikes) {
@@ -473,14 +479,25 @@ function renderOiHeatmaps(feed) {
     return { z, abs };
   };
 
+  // Clamp the color scale to the 90th-percentile move so moderate OI building
+  // shows as clear color instead of washing out under a single huge outlier.
+  const robustCap = (z) => {
+    const mags = z.flat().map(Math.abs).filter((v) => v > 0).sort((a, b) => a - b);
+    if (!mags.length) return 1;
+    return mags[Math.floor(mags.length * 0.9)] || mags[mags.length - 1];
+  };
+
   const diverging = [
     [0, "#ef4444"],   // strong negative -> red
     [0.5, "#1e293b"], // zero -> neutral (theme bg)
     [1, "#22c55e"],   // strong positive -> green
   ];
 
-  const plotLeg = (divId, leg, title) => {
-    const { z, abs } = buildMatrices(leg);
+  const plotLeg = (divId, leg) => {
+    const strikes = activeStrikes(leg);
+    if (!strikes.length) { Plotly.purge(divId); return; }
+    const { z, abs } = buildMatrices(leg, strikes);
+    const cap = robustCap(z);
     Plotly.newPlot(divId, [{
       type: "heatmap",
       x: times,
@@ -489,9 +506,11 @@ function renderOiHeatmaps(feed) {
       customdata: abs,
       colorscale: diverging,
       zmid: 0,
+      zmin: -cap,
+      zmax: cap,
       hovertemplate:
         "Strike: %{y}<br>Time: %{x}<br>ΔOI: %{z:,}<br>Total OI: %{customdata:,}<extra></extra>",
-      colorbar: { title: "ΔOI" },
+      colorbar: { title: "ΔOI (capped)" },
     }], {
       paper_bgcolor: "#1e293b",
       plot_bgcolor: "#1e293b",
@@ -502,8 +521,8 @@ function renderOiHeatmaps(feed) {
     }, { responsive: true, scrollZoom: true });
   };
 
-  plotLeg("ceHeatmap", "ce_oi", "CE");
-  plotLeg("peHeatmap", "pe_oi", "PE");
+  plotLeg("ceHeatmap", "ce_oi");
+  plotLeg("peHeatmap", "pe_oi");
 }
 
 async function renderTimelineWithCompare(primaryFeed, primaryDay, expiry, compareDays) {
