@@ -332,17 +332,44 @@ function createBrewingCard(s) {
   });
   card.appendChild(detail);
 
+  const seen = brewingSeenText(s);
+  if (seen) {
+    const time = document.createElement("div");
+    time.className = "brewing-time";
+    time.textContent = seen;
+    card.appendChild(time);
+  }
+
   return card;
+}
+
+function brewingTime(ts) {
+  // ts is "YYYY-MM-DD HH:MM" — show just HH:MM.
+  if (!ts) return "";
+  const parts = String(ts).split(" ");
+  return parts.length > 1 ? parts[1] : ts;
+}
+
+function brewingSeenText(s) {
+  const first = brewingTime(s.first_seen);
+  const last = brewingTime(s.last_seen);
+  if (!first && !last) return "";           // live-only signal, no timestamps
+  if (first && last && first !== last) return "seen " + first + " → " + last;
+  return "seen " + (first || last);
 }
 
 function renderBrewing(feed) {
   const container = document.getElementById("brewingGrid");
   clearNode(container);
-  const signals = (feed && feed.brewing) || [];
+  // Prefer the day's accumulated surges (survive after they cool); fall back
+  // to the live snapshot for older feeds that predate brewing_today.
+  const today = (feed && feed.brewing_today) || [];
+  const live = (feed && feed.brewing) || [];
+  const signals = today.length ? today : live;
   if (signals.length === 0) {
     const empty = document.createElement("div");
     empty.className = "brewing-empty";
-    empty.textContent = "No strong OI surges right now.";
+    empty.textContent = "No strong OI surges seen this session.";
     container.appendChild(empty);
     return;
   }
