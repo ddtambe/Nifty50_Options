@@ -1,30 +1,43 @@
 # Nifty 50 Option-Chain Direction Tool
 
-## Complete Project Documentation
+## Complete Project Documentation (Single Source of Truth)
 
-**Version:** 1.0  
-**Last Updated:** August 4, 2026  
-**Author:** Built with Claude Code
+**Version:** 2.0
+**Last Updated:** August 11, 2026
+**Repository:** https://github.com/ddtambe/Nifty50_Options (public)
+**Live Dashboard:** https://ddtambe.github.io/Nifty50_Options/docs/
+
+> This single document supersedes the older `README.md`, `SETUP_COMPLETE.md`, and
+> `EXTERNAL_CRON_SETUP.md` notes. It reflects the code as it stands today, including
+> brewing-move detection, the per-strike OI heatmaps, TradingView-style chart zoom,
+> the weekend market-hours guard, and the spot-resolution fix.
+>
+> **Not financial advice.** This tool surfaces evidence; *you* make the trade decision.
 
 ---
 
 ## Table of Contents
 
 1. [Project Overview](#1-project-overview)
-2. [Architecture](#2-architecture)
+2. [Architecture and Data Flow](#2-architecture-and-data-flow)
 3. [File Structure](#3-file-structure)
-4. [Configuration](#4-configuration)
-5. [Data Pipeline](#5-data-pipeline)
-6. [GitHub Actions Workflow](#6-github-actions-workflow)
-7. [Dashboard Features](#7-dashboard-features)
-8. [5paisa API Integration](#8-5paisa-api-integration)
-9. [GitHub Secrets Setup](#9-github-secrets-setup)
-10. [Installation and Setup](#10-installation-and-setup)
-11. [Running Locally](#11-running-locally)
-12. [Troubleshooting](#12-troubleshooting)
+4. [Configuration (`config.py`)](#4-configuration-configpy)
+5. [The Pipeline, Module by Module](#5-the-pipeline-module-by-module)
+6. [Indicators (`indicators.py`)](#6-indicators-indicatorspy)
+7. [Brewing-Move / OI-Surge Detection (`signals.py`)](#7-brewing-move--oi-surge-detection-signalspy)
+8. [The `brewing_today` Accumulator (`writer.py`)](#8-the-brewing_today-accumulator-writerpy)
+9. [5paisa API Integration and Spot Resolution (`fetcher.py`)](#9-5paisa-api-integration-and-spot-resolution-fetcherpy)
+10. [Market-Hours Guard (`clock.py`)](#10-market-hours-guard-clockpy)
+11. [GitHub Actions Workflow and External Cron](#11-github-actions-workflow-and-external-cron)
+12. [The Web Dashboard (`docs/`)](#12-the-web-dashboard-docs)
 13. [Data Formats](#13-data-formats)
-14. [Indicator Calculations](#14-indicator-calculations)
-15. [Security Considerations](#15-security-considerations)
+14. [GitHub Secrets Setup](#14-github-secrets-setup)
+15. [Install, Run, and Test](#15-install-run-and-test)
+16. [Security Considerations](#16-security-considerations)
+17. [Troubleshooting](#17-troubleshooting)
+18. [Recent Changes (Session Changelog)](#18-recent-changes-session-changelog)
+19. [Known Limitations and Pending Work](#19-known-limitations-and-pending-work)
+20. [Appendix: Module and Test Summary](#20-appendix-module-and-test-summary)
 
 ---
 
@@ -32,76 +45,79 @@
 
 ### Purpose
 
-An automated tool that fetches Nifty 50 option chain data every 15 minutes during market hours, computes trading indicators (PCR, Max Pain, Buildup, Support/Resistance), and displays them on an interactive web dashboard.
+An automated tool that fetches the Nifty 50 option chain every ~15 minutes during market
+hours, computes direction indicators, detects OI surges that hint where a move is
+*building*, commits CSV + JSON to a public repo, and serves an interactive Plotly
+dashboard on GitHub Pages — all on GitHub's free tier, with zero servers.
 
 ### Key Features
 
-- **Automated Data Collection:** Runs via GitHub Actions every 15 minutes (Mon-Fri, 09:15-15:30 IST)
-- **5paisa API Integration:** Uses legitimate broker API (not web scraping)
-- **Real-time Indicators:** PCR, Max Pain, Buildup analysis, S/R zones
-- **Interactive Dashboard:** Plotly.js charts hosted on GitHub Pages
-- **Multi-Expiry Support:** Tracks 3 expiries simultaneously
-- **Historical Comparison:** Compare same expiry across different days
-- **Zero Infrastructure Cost:** Runs entirely on GitHub (free tier)
+- **Automated collection** every ~15 min (Mon–Fri, 09:15–15:30 IST) via GitHub Actions.
+- **Legitimate broker API** (5paisa `py5paisa` SDK, TOTP auth) — not web scraping.
+- **Direction indicators:** PCR, Max Pain, Support/Resistance, buildup/unwinding, verdict.
+- **Brewing-move detection:** flags strikes whose CE/PE OI is surging over 30-min / 1-hr
+  windows — a *leading* signal that price may move.
+- **Interactive dashboard:** S/R walls, day timeline, buildup table, per-strike OI
+  heatmaps, and brewing-move cards, all with TradingView-style zoom/pan.
+- **Multi-expiry** (current + next 2 weekly expiries) and **historical comparison**
+  (overlay the same expiry across days).
+- **Zero infrastructure cost.**
 
 ### Technology Stack
 
-| Component | Technology |
-|-----------|------------|
-| Backend | Python 3.11 |
-| Data Source | 5paisa API (py5paisa SDK) |
-| Automation | GitHub Actions |
-| Storage | Git repository (CSV + JSON) |
-| Frontend | HTML, CSS, JavaScript |
-| Charts | Plotly.js |
-| Hosting | GitHub Pages |
+| Component    | Technology                          |
+|--------------|-------------------------------------|
+| Backend      | Python 3.11 (CI) / 3.14 (local dev) |
+| Data source  | 5paisa API via `py5paisa`           |
+| Automation   | GitHub Actions (+ external cron)    |
+| Storage      | Git repo (CSV + JSON)               |
+| Frontend     | HTML + CSS + vanilla JS             |
+| Charts       | Plotly.js                           |
+| Hosting      | GitHub Pages                        |
+| Tests        | pytest                              |
 
 ---
 
-## 2. Architecture
+## 2. Architecture and Data Flow
 
 ```
-+------------------------------------------------------------------+
-|                      GitHub Actions                               |
-|  +------------------------------------------------------------+  |
-|  |  Cron Schedule: */15 min (Mon-Fri, 09:15-15:30 IST)        |  |
-|  +------------------------------------------------------------+  |
-|                              |                                    |
-|                              v                                    |
-|  +------------------------------------------------------------+  |
-|  |                    Python Pipeline                          |  |
-|  |  +----------+  +----------+  +----------+  +---------+     |  |
-|  |  | fetcher  |->|  parser  |->|indicators|->| writer  |     |  |
-|  |  | (5paisa) |  |          |  |          |  |         |     |  |
-|  |  +----------+  +----------+  +----------+  +---------+     |  |
-|  +------------------------------------------------------------+  |
-|                              |                                    |
-|                              v                                    |
-|  +------------------------------------------------------------+  |
-|  |              Git Commit and Push                            |  |
-|  |  data/YYYY-MM-DD/*.csv, *.json -> GitHub Repository        |  |
-|  +------------------------------------------------------------+  |
-+------------------------------------------------------------------+
++---------------------------------------------------------------------+
+|                          GitHub Actions                             |
+|  Schedule (cron "*/15 3-10 * * 1-5") + workflow_dispatch            |
+|  (external cron-job.org can also trigger the dispatch)             |
+|                              |                                       |
+|                              v                                       |
+|   Python pipeline:  clock -> fetcher -> parse -> indicators         |
+|                     -> snapshot -> signals -> writer                |
+|                              |                                       |
+|                              v                                       |
+|   git add data/ && commit && push   (only if data changed)         |
++---------------------------------------------------------------------+
                                |
                                v
-+------------------------------------------------------------------+
-|                      GitHub Pages                                 |
-|  +------------------------------------------------------------+  |
-|  |  docs/index.html + app.js + style.css                      |  |
-|  |  Loads: ../data/index.json -> renders Plotly charts        |  |
-|  +------------------------------------------------------------+  |
-+------------------------------------------------------------------+
++---------------------------------------------------------------------+
+|                          GitHub Pages                               |
+|  docs/index.html + app.js + style.css                              |
+|  fetches ../data/index.json and ../data/<date>/<expiry>.json       |
+|  renders Plotly charts, heatmaps, and brewing cards                |
++---------------------------------------------------------------------+
 ```
 
-### Data Flow
+### Cycle data flow (one run of `python -m nifty_oc.main`)
 
-1. **Fetch:** 5paisa API -> Raw option chain JSON
-2. **Parse:** Extract strikes, OI, LTP, IV for configured range
-3. **Compute:** Calculate PCR, Max Pain, Buildup, S/R zones
-4. **Write:** Save to CSV (for Excel) and JSON (for dashboard)
-5. **Commit:** Push to GitHub repository
-6. **Deploy:** GitHub Pages serves the dashboard
-7. **Display:** Browser loads JSON, renders Plotly charts
+1. **Guard** — `clock.is_market_hours(now_ist)` — skip if weekend or outside 09:15–15:30
+   IST (unless `FORCE_FETCH=true`).
+2. **Load previous LTP** — `writer.load_prev_ltp()` reads the day's `_raw.csv` files so
+   buildup can compare this snapshot against the last.
+3. **Fetch** — `fetcher.fetch_option_chain()` logs in via TOTP, pulls expiries + chains,
+   resolves spot, returns an NSE-compatible payload. A `FetchError` is a **non-fatal
+   skip** (the cycle exits cleanly, retried next time).
+4. **Build snapshot** — `snapshot.build_snapshot()` computes indicators per expiry and
+   builds display rows with buildup labels.
+5. **Write** — `writer` appends `summary.csv` + `_raw.csv`, overwrites `_buildup.csv`,
+   updates each `<expiry>.json` (timeline, strikes, `strikes_timeline`, `brewing`,
+   `brewing_today`), and rebuilds `index.json`.
+6. **Commit & deploy** — the workflow commits `data/`; GitHub Pages serves it.
 
 ---
 
@@ -109,744 +125,616 @@ An automated tool that fetches Nifty 50 option chain data every 15 minutes durin
 
 ```
 nifty-oc/
-|-- nifty_oc/                    # Python package
-|   |-- __init__.py
-|   |-- main.py                  # Entry point, orchestrates pipeline
-|   |-- config.py                # User-editable configuration
-|   |-- clock.py                 # Market hours guard
-|   |-- fetcher.py               # 5paisa API integration
-|   |-- parser.py                # Data extraction and filtering
-|   |-- indicators.py            # PCR, Max Pain, Buildup, S/R
-|   |-- snapshot.py              # Build snapshot with indicators
-|   +-- writer.py                # CSV/JSON file writers
-|
-|-- tests/                       # Test suite (53 tests)
-|   |-- test_clock.py
-|   |-- test_fetcher.py
-|   |-- test_indicators.py
-|   |-- test_main.py
-|   |-- test_parse.py
-|   |-- test_snapshot.py
-|   +-- test_writer.py
-|
-|-- docs/                        # Dashboard (GitHub Pages)
-|   |-- index.html               # Main HTML structure
-|   |-- app.js                   # Dashboard logic, Plotly rendering
-|   |-- style.css                # Styling
-|   +-- sample/                  # Fallback sample data
-|       |-- index.json
-|       +-- 2026-07-29/
-|           +-- 2026-07-31.json
-|
-|-- data/                        # Generated data (git-tracked)
-|   |-- index.json               # Index of all days and expiries
-|   +-- YYYY-MM-DD/              # One folder per trade date
-|       |-- summary.csv          # Aggregated indicators per snapshot
-|       |-- YYYY-MM-DD_raw.csv   # Full option chain (nearest expiry)
-|       |-- YYYY-MM-DD_buildup.csv
-|       |-- YYYY-MM-DD.json      # JSON for dashboard (nearest expiry)
-|       +-- ...                  # More expiries
-|
-|-- .github/
-|   +-- workflows/
-|       +-- fetch.yml            # GitHub Actions workflow
-|
-|-- requirements.txt             # Python dependencies
-|-- .gitignore
-|-- README.md
-|-- SETUP_COMPLETE.md            # Setup summary from initial build
-+-- PROJECT_DOCUMENTATION.md     # This file
+├── nifty_oc/                     # Python package (the pipeline)
+│   ├── __init__.py
+│   ├── main.py                   # Orchestrator: guard -> fetch -> compute -> write
+│   ├── config.py                 # User-editable constants + surge thresholds
+│   ├── clock.py                  # Market-hours guard (weekend + time window)
+│   ├── fetcher.py                # 5paisa API client, TOTP auth, spot resolution
+│   ├── dates.py                  # NSE expiry parsing/selection
+│   ├── parse.py                  # Raw payload -> clean row dicts (pure)
+│   ├── indicators.py             # PCR, Max Pain, S/R, buildup, verdict (pure)
+│   ├── signals.py                # Brewing-move (OI-surge) detection (pure)
+│   ├── snapshot.py               # Assemble one cycle's computed snapshot
+│   └── writer.py                 # CSV/JSON writers + brewing_today accumulator
+│
+├── tests/                        # pytest suite (81 tests)
+│   ├── test_clock.py             ├── test_indicators.py  ├── test_snapshot.py
+│   ├── test_fetcher.py           ├── test_main.py        ├── test_writer.py
+│   ├── test_dates.py             ├── test_parse.py       └── test_signals.py
+│   └── fixtures/sample_chain.json
+│
+├── docs/                         # Dashboard (served by GitHub Pages)
+│   ├── index.html                # Layout + Plotly include
+│   ├── app.js                    # Data load, chart rendering, zoom config
+│   ├── style.css                 # Styling (incl. brewing cards / heatmaps)
+│   ├── sample/                   # Bundled fallback data
+│   └── superpowers/              # Design specs + implementation plans
+│       ├── specs/                #   *-design.md (brainstormed specs)
+│       └── plans/                #   *.md (implementation plans)
+│
+├── data/                         # Generated at runtime (git-tracked)
+│   ├── index.json                # {days: [{trade_date, expiries:[...]}]}
+│   └── <trade-date>/             # One folder per trade date
+│       ├── summary.csv           #   day timeline, all expiries (append)
+│       ├── <expiry>_raw.csv      #   every displayed strike, every snapshot (append)
+│       ├── <expiry>_buildup.csv  #   latest snapshot, readable (overwrite)
+│       └── <expiry>.json         #   dashboard feed (read-modify-write)
+│
+├── .github/workflows/fetch.yml   # GitHub Actions workflow
+├── requirements.txt
+├── README.md                     # (superseded by this document)
+├── SETUP_COMPLETE.md             # (superseded)
+├── EXTERNAL_CRON_SETUP.md        # (superseded)
+└── PROJECT_DOCUMENTATION.md      # THIS FILE — single source of truth
 ```
 
 ---
 
-## 4. Configuration
-
-### nifty_oc/config.py
+## 4. Configuration (`config.py`)
 
 ```python
-"""User-editable configuration constants."""
-
 SYMBOL = "NIFTY"
 
-# Strike window - edit these to change coverage
+# Strike window — edit these two to change coverage.
 STRIKE_MIN = 21000
 STRIKE_MAX = 30000
-STRIKE_STEP = 50       # Nifty native strike gap (for accurate PCR/Max Pain)
-DISPLAY_STEP = 200     # Strikes shown in output (46 rows: 21000 to 30000)
+STRIKE_STEP = 50       # Nifty native strike gap (used for indicator math)
+DISPLAY_STEP = 200     # strikes shown/stored in output files
 
-NUM_EXPIRIES = 3       # Current + next 2 weekly expiries
+NUM_EXPIRIES = 3       # current + next + next-to-next
 
-MARKET_OPEN = (9, 15)   # IST hours, minutes
-MARKET_CLOSE = (15, 30)
+# --- Brewing-move (OI-surge) signal thresholds ---
+SURGE_PCT_THRESHOLD = 0.30       # min fractional OI growth over a window (30%)
+SURGE_ABS_THRESHOLD = 500_000    # min absolute OI growth over a window (contracts)
+SURGE_WINDOWS = {"30min": 2, "1hr": 4}   # label -> snapshots-ago (15-min steps)
+
+MARKET_OPEN = (9, 15)    # IST hh, mm
+MARKET_CLOSE = (15, 30)  # IST hh, mm
 
 DATA_DIR = "data"
 DOCS_DIR = "docs"
 ```
 
-### Configuration Options
+| Parameter             | Default            | Meaning                                                  |
+|-----------------------|--------------------|----------------------------------------------------------|
+| `STRIKE_STEP`         | 50                 | Native strike gap — indicators computed on **all** 50-pt strikes for accuracy. |
+| `DISPLAY_STEP`        | 200                | Output granularity — CSV/JSON/dashboard show 200-pt strikes for a clean view. |
+| `NUM_EXPIRIES`        | 3                  | Weekly expiries fetched each cycle.                      |
+| `SURGE_PCT_THRESHOLD` | 0.30               | A leg must grow ≥30% over a window to flag.              |
+| `SURGE_ABS_THRESHOLD` | 500,000            | ...**and** grow ≥500K contracts (both conditions).       |
+| `SURGE_WINDOWS`       | `{30min:2, 1hr:4}` | Look-back offsets in 15-min snapshots (2 back ≈ 30 min). |
 
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| SYMBOL | "NIFTY" | Underlying symbol |
-| STRIKE_MIN | 21000 | Lowest strike to track |
-| STRIKE_MAX | 30000 | Highest strike to track |
-| STRIKE_STEP | 50 | Native strike interval (for computation) |
-| DISPLAY_STEP | 200 | Output strike interval (reduces rows) |
-| NUM_EXPIRIES | 3 | Number of expiries to fetch |
-| MARKET_OPEN | (9, 15) | Market open time IST |
-| MARKET_CLOSE | (15, 30) | Market close time IST |
-
-### Why 50-Compute / 200-Display?
-
-- PCR and Max Pain are sums across all strikes
-- Computing on only 200-step strikes would miss OI and produce inaccurate indicators
-- We compute on all 50-step strikes for accuracy
-- We display only 200-step strikes for cleaner output (46 rows instead of 181)
+**Why compute-on-50 / display-on-200?** PCR and Max Pain are sums across strikes; computing
+only on 200-pt strikes would drop most of the OI and skew the indicators. So the math runs
+on every 50-pt strike, while output is thinned to 200-pt strikes for readability.
 
 ---
 
-## 5. Data Pipeline
+## 5. The Pipeline, Module by Module
 
-### Module Responsibilities
-
-#### main.py - Orchestrator
+### `main.py` — Orchestrator
 
 ```python
-def run_cycle():
-    # 1. Check market hours
-    if not is_market_hours(now_ist):
-        print("[skip] outside market hours")
-        return
-    
-    # 2. Fetch from 5paisa
-    raw = fetch_option_chain()
-    
-    # 3. Build snapshots for each expiry
-    for expiry in expiries:
-        snapshot = build_snapshot(raw, expiry, prev_ltp)
-        write_files(snapshot)
-    
-    # 4. Update index
-    write_index()
+def run(now=None, fetch=None, data_dir=None) -> int:
+    now = now or now_ist()
+    if not is_market_hours(now):
+        print(f"[skip] outside market hours: {now}")
+        return 0
+    ts = now.strftime("%Y-%m-%d %H:%M"); trade_date = ts[:10]
+    prev = writer.load_prev_ltp(trade_date, data_dir)
+    try:
+        payload = fetch()
+    except FetchError as exc:
+        print(f"[skip] fetch failed (non-fatal): {exc}")   # e.g. spot unresolvable
+        return 0
+    snap = build_snapshot(payload, ts, prev)
+    writer.write_summary(snap, data_dir); writer.write_raw(snap, data_dir)
+    writer.write_buildup(snap, data_dir); writer.write_json_feed(snap, data_dir)
+    writer.write_index(data_dir)
+    print(f"[ok] {ts} spot={snap['spot']} | ...verdicts...")
+    return 0
 ```
 
-#### fetcher.py - 5paisa API Client
+`run()` is dependency-injectable (`now`, `fetch`, `data_dir`) so tests drive it without
+network or the clock. `main()` just calls `sys.exit(run())`.
 
-- Authenticates using TOTP (auto-generates 6-digit code from secret)
-- Fetches expiry list via get_expiry("N", "NIFTY")
-- Fetches option chain via get_option_chain("N", "NIFTY", expiry_timestamp)
-- Transforms 5paisa response format to NSE-compatible format for pipeline
+### `dates.py` — Expiry helpers (pure)
 
-#### parser.py - Data Extraction
+- `parse_nse_expiry("31-Jul-2026") -> "2026-07-31"`.
+- `select_expiries(list, count) -> [iso, ...]` — first `count`, order preserved.
 
-- extract_spot(raw) - Gets underlying spot price
-- extract_expiries(raw) - Gets list of expiry dates
-- rows_for_expiry(raw, expiry, min, max) - Filters strikes for an expiry
-- nearest_atm(spot, step) - Rounds spot to nearest strike
+### `parse.py` — Raw payload → clean rows (pure)
 
-#### indicators.py - Calculations
+- `extract_spot(payload) -> float` — `payload["records"]["underlyingValue"]`.
+- `extract_expiries(payload, count) -> [iso]`.
+- `rows_for_expiry(payload, iso_expiry, min, max) -> [{strike, ce, pe}]` — each leg is a
+  dict `{oi, chg_oi, ltp, iv, volume}`; a missing leg defaults to zeros.
+- `nearest_atm(spot, step) -> int`.
 
-- compute_pcr(rows) - Put-Call Ratio (PE OI / CE OI)
-- compute_max_pain(rows) - Strike where option buyers lose most
-- buildup_label(oi_delta, ltp_delta) - Long/Short Buildup/Unwinding
-- zone_label(strike, spot, atm) - ATM/ITM/OTM zone
-- support_resistance(rows) - Highest PE OI (support) / CE OI (resistance)
-- verdict(spot, max_pain, pcr, support, resistance) - Bullish/Bearish/Rangebound
+### `snapshot.py` — Assemble one cycle
 
-#### snapshot.py - Snapshot Builder
+- `build_snapshot(payload, timestamp_ist, prev_ltp) -> snapshot` — per expiry: `pcr`,
+  `max_pain`, `support`, `resistance`, `ce_oi_total`, `pe_oi_total`, `verdict`, and
+  `display_rows` (200-pt strikes) with buildup labels.
+- `_buildup_for(leg, key, prev_ltp)` — returns `N/A` on a strike's first sighting;
+  otherwise classifies from ΔLTP vs ΔOI.
+- `ltp_index(snapshot)` — maps `(expiry, strike, leg) -> ltp` for the next cycle's
+  `prev_ltp`.
 
-- Builds complete snapshot with all indicators
-- Computes buildup by comparing current LTP with previous snapshot
-- Filters to DISPLAY_STEP strikes for output
+### `writer.py` — All file output
 
-#### writer.py - File Writers
+| Function            | File                     | Mode              |
+|---------------------|--------------------------|-------------------|
+| `write_summary`     | `summary.csv`            | append            |
+| `write_raw`         | `<expiry>_raw.csv`       | append            |
+| `write_buildup`     | `<expiry>_buildup.csv`   | overwrite (latest)|
+| `write_json_feed`   | `<expiry>.json`          | read-modify-write |
+| `write_index`       | `index.json`             | overwrite         |
+| `load_prev_ltp`     | reads `_raw.csv`         | read              |
 
-- write_summary_row() - Appends to summary.csv
-- write_raw_csv() - Appends full chain to raw CSV
-- write_buildup_csv() - Overwrites buildup CSV (latest only)
-- write_json_feed() - Appends to JSON timeline for dashboard
-- write_index() - Updates data/index.json with available days/expiries
+`write_json_feed` is the heart of the dashboard feed — see §7 and §8.
 
 ---
 
-## 6. GitHub Actions Workflow
+## 6. Indicators (`indicators.py`)
 
-### .github/workflows/fetch.yml
+All pure functions, no I/O.
+
+### Buildup — `classify_buildup(chg_ltp, chg_oi)`
+
+| ΔOI       | ΔLTP        | Label            | Meaning                 |
+|-----------|-------------|------------------|-------------------------|
+| = 0       | (any)       | `N/A`            | No OI change → no signal |
+| > 0       | > 0         | `Long Buildup`   | Fresh longs (bullish)   |
+| > 0       | ≤ 0         | `Short Buildup`  | Fresh shorts (bearish)  |
+| < 0       | > 0         | `Short Covering` | Shorts exiting (bullish)|
+| < 0       | ≤ 0         | `Long Unwinding` | Longs exiting (bearish) |
+
+### PCR — `pcr(rows)`
+
+`PCR = ΣPE_OI / ΣCE_OI`, rounded to 2 decimals; returns `0.0` if there is no CE OI.
+
+### Max Pain — `max_pain(rows)`
+
+The strike that minimizes total writer payout at expiry:
+
+```
+for each candidate expiry_price K*:
+    pain = Σ over strikes k [ (K*-k)·CE_OI(k) if K*>k ]  +  Σ [ (k-K*)·PE_OI(k) if K*<k ]
+max_pain = the K* with the smallest pain
+```
+
+### Support / Resistance
+
+- `support(rows)` — strike with the highest **PE** OI (put writers defend it).
+- `resistance(rows)` — strike with the highest **CE** OI (call writers defend it).
+
+### Zone — `zone_200(strike)`
+
+Returns the 200-pt band, e.g. `24800` → `"24800-25000"`.
+
+### Verdict — `verdict(pcr_value, rows, atm)`
+
+Currently a **PCR-only** heuristic (thresholds from `indicators.py`):
+
+| PCR                    | Verdict           |
+|------------------------|-------------------|
+| ≥ 1.2 (`_BULLISH_PCR`) | `Leaning Bullish` |
+| ≤ 0.8 (`_BEARISH_PCR`) and > 0 | `Leaning Bearish` |
+| otherwise              | `Rangebound`      |
+
+> Note: `rows` and `atm` are accepted for a future spot-vs-max-pain refinement but are
+> not yet used in the verdict math.
+
+### `display_strikes(rows, step)`
+
+Keeps only rows where `strike % step == 0` (the 200-pt display subset).
+
+---
+
+## 7. Brewing-Move / OI-Surge Detection (`signals.py`)
+
+**Idea:** the option chain is forward-looking. If OI at a strike is *surging* over the last
+30 min or 1 hr, a price move is likely *building*. This module reads the feed's accumulated
+`strikes_timeline` and flags surging strikes on the latest snapshot.
+
+### Direction mapping
+
+| Surging leg | Interpretation           | Direction |
+|-------------|--------------------------|-----------|
+| **PE**      | Support building         | `BULLISH` (favor CE) |
+| **CE**      | Resistance building      | `BEARISH` (favor PE) |
+| **Both** at same strike | Two-sided pinning | `PIN` (rangebound)   |
+
+### Flagging rule (per leg, per window)
+
+A window flags only if **both** thresholds clear:
+`pct ≥ SURGE_PCT_THRESHOLD (30%)` **and** `delta ≥ SURGE_ABS_THRESHOLD (500K)`.
+A leg with no prior baseline (`oi_past ≤ 0`) is skipped.
+
+### Confidence
+
+- `HIGH` if the leg flags in **≥ 2 windows**, **or** it is *textbook* — a PE surge **below**
+  spot (real support) or a CE surge **above** spot (real resistance).
+- `MEDIUM` otherwise.
+
+### Output
+
+`detect_brewing(strikes_timeline, spot, pct_threshold, abs_threshold, windows)` returns a
+list of signals sorted by confidence (HIGH first) then by largest absolute surge. Each
+signal carries `strike, leg, direction, confidence, windows, oi_now, side_of_spot`, plus
+per-window `oi_past_*`, `pct_*`, `abs_*` stats. Returns `[]` when there are fewer than 2
+snapshots or no window has enough history.
+
+---
+
+## 8. The `brewing_today` Accumulator (`writer.py`)
+
+**The bug it fixes:** `write_json_feed` recomputes `brewing` against the *latest* snapshot
+each cycle. Because a surge is transient, a strong mid-day signal would be gone (`brewing ==
+[]`) by a quiet close — so the dashboard showed "nothing brewing" regardless of the day
+selected.
+
+**The fix — `_accumulate_brewing_today(existing, current, ts)`:** additive, never drops a
+signal once seen. Signals are keyed by `(strike, leg, direction)`:
+
+- **New key** → append with `first_seen = last_seen = ts`.
+- **Existing key, stronger surge** (`_max_abs` higher) → replace stats, keep original
+  `first_seen`, update `last_seen`.
+- **Existing key, not stronger** → just update `last_seen`.
+
+The feed therefore keeps a running, timestamped list of every surge seen during the session.
+The dashboard prefers `brewing_today` and falls back to live `brewing` if the accumulator is
+empty. Detection is wrapped in `try/except` so it can **never** break the fetch/write.
+
+---
+
+## 9. 5paisa API Integration and Spot Resolution (`fetcher.py`)
+
+### Authentication (TOTP)
+
+`_generate_totp(secret)` derives the current 6-digit code (RFC 6238) from the base32 TOTP
+secret; `get_totp_session(client_code, totp, pin)` establishes the session. No 6-digit code
+is ever stored — only the secret (a GitHub Secret).
+
+### Methods used
+
+| Method                                       | Purpose                    |
+|----------------------------------------------|----------------------------|
+| `get_totp_session(client_code, totp, pin)`   | Authenticate               |
+| `get_expiry("N", "NIFTY")`                   | Expiry list (+ index LTP)  |
+| `get_option_chain("N", "NIFTY", expiry_ts)`  | Chain for one expiry       |
+| `fetch_market_feed_scrip([...])`             | Fallback spot lookup       |
+
+### Spot resolution (order of precedence)
+
+The pipeline is worthless with a wrong spot (it drives Max Pain, verdict, and brewing
+side-of-spot). Resolution now tries three sources, in order, and **fails the cycle** rather
+than faking a value:
+
+1. **`lastrate` in the `get_expiry` response** — 5paisa returns the live NIFTY index LTP
+   here, e.g. `lastrate: [{"ExchType": "C", "LTP": 24449.55, "ScripCode": 999920000}]`.
+   `_spot_from_expiry_response()` reads `lastrate[0]["LTP"]` — no extra API call. This is the
+   primary, most reliable source because the option-chain rows usually omit
+   `UnderlyingValue`.
+2. **`UnderlyingValue` / `SpotPrice` / `Spot`** on an option row (if present).
+3. **Market feed** — `fetch_market_feed_scrip([{Exch:"N", ExchType:"C", ScripCode:999920000}])`.
+   The NIFTY index lives on the **Cash** segment (`ExchType "C"`), **not** derivatives
+   (`"D"`); the old code queried `"D"`, which silently returned nothing.
+
+If all three fail, `fetch_option_chain()` raises `FetchError("Could not resolve NIFTY
+spot...")`, which `main.py` treats as a clean, non-fatal skip. **No fabricated `24000.0`
+fallback exists anymore** — an honest gap beats publishing garbage.
+
+### Response transformation
+
+5paisa's response is transformed into the NSE-compatible shape the rest of the pipeline
+expects: `{"records": {"underlyingValue", "expiryDates", "data": [{strikePrice, expiryDate,
+CE, PE}]}}`.
+
+---
+
+## 10. Market-Hours Guard (`clock.py`)
+
+```python
+def is_market_hours(now_ist) -> bool:
+    if os.environ.get("FORCE_FETCH", "").lower() == "true":
+        return True                      # manual runs bypass all checks
+    if now_ist.weekday() >= 5:           # 5=Sat, 6=Sun — NSE closed
+        return False
+    open_t, close_t = time(*MARKET_OPEN), time(*MARKET_CLOSE)
+    return open_t <= now_ist.time() <= close_t
+```
+
+The **weekend guard** was added because the previous version only checked the time-of-day —
+so Saturday/Sunday runs published 5paisa's *frozen last-session* OI (and burned Actions
+minutes). `now_ist` must already be in IST (see `main.now_ist()`).
+
+---
+
+## 11. GitHub Actions Workflow and External Cron
+
+`.github/workflows/fetch.yml` (current):
 
 ```yaml
 name: fetch-nifty-option-chain
-
 on:
   schedule:
-    # Every 15 min during IST market window (03:45-10:00 UTC)
-    - cron: "*/15 3-10 * * 1-5"
-    # Extra snapshots at 15:25 and 15:30 IST
-    - cron: "55,59 9 * * 1-5"
-    - cron: "0 10 * * 1-5"
-  workflow_dispatch:
-    inputs:
-      force:
-        description: 'Force fetch (bypass market-hours check)'
-        required: false
-        default: 'false'
-        type: choice
-        options:
-          - 'false'
-          - 'true'
-
+    - cron: "*/15 3-10 * * 1-5"   # ~ every 15 min during the IST market window
+  workflow_dispatch:               # manual + external-cron trigger
 permissions:
-  contents: write   # Allow committing data back
-
+  contents: write
+concurrency:
+  group: fetch-nifty
+  cancel-in-progress: false
 jobs:
   fetch:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      
-      - name: Install dependencies
-        run: pip install -r requirements.txt
-      
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with: { python-version: "3.11" }
+      - run: pip install -r requirements.txt
       - name: Run fetch cycle
         run: python -m nifty_oc.main
-        env:
-          FORCE_FETCH: ${{ github.event.inputs.force || 'false' }}
-          # All 9 secrets passed as environment variables
-      
+        env:                         # all 9 secrets injected here (masked in logs)
+          FIVEPAISA_APP_NAME: ${{ secrets.FIVEPAISA_APP_NAME }}
+          # ... FIVEPAISA_APP_SOURCE, USER_ID, PASSWORD, USER_KEY, ENCRYPTION_KEY,
+          #     CLIENT_CODE, TOTP_SECRET, PIN
       - name: Commit data if changed
         run: |
-          git config user.name "github-actions[bot]"
+          git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           if [ -d data/ ]; then
             git add data/
-            git diff --staged --quiet || git commit -m "data: snapshot" && git push
+            git diff --staged --quiet || { git commit -m "data: snapshot"; git push; }
           fi
 ```
 
-### Schedule Explanation
-
-| Cron | UTC Time | IST Time | Purpose |
-|------|----------|----------|---------|
-| */15 3-10 * * 1-5 | 03:00-10:45 | 08:30-16:15 | Main 15-min intervals |
-| 55,59 9 * * 1-5 | 09:55, 09:59 | 15:25, 15:29 | Near-close snapshots |
-| 0 10 * * 1-5 | 10:00 | 15:30 | Exact close snapshot |
-
-Note: The code has an additional market-hours guard that skips if outside 09:15-15:30 IST.
-
-### Manual Trigger
-
-1. Go to Actions -> fetch-nifty-option-chain
-2. Click "Run workflow"
-3. Set "Force fetch" to true to bypass market-hours check
-4. Click "Run workflow"
+- GitHub's scheduled crons can lag under load; an **external cron (cron-job.org)** hits the
+  `workflow_dispatch` endpoint every ~15 min for more reliable triggering.
+- The in-code guard (`clock.py`) is the real gate — a triggered run outside market hours
+  simply prints `[skip]` and exits 0.
+- The commit step pushes only when `data/` actually changed, so quiet cycles produce no
+  commit noise.
 
 ---
 
-## 7. Dashboard Features
+## 12. The Web Dashboard (`docs/`)
 
-### URL
-
-https://ddtambe.github.io/Nifty50_Options/docs/
+Static Plotly dashboard; loads `../data/index.json`, then the selected day/expiry feed.
 
 ### Controls
+- **Day** dropdown — trade date.
+- **Expiry** dropdown — weekly expiry.
+- **Compare** checkboxes — overlay other days for the same expiry.
 
-| Control | Function |
-|---------|----------|
-| Day Dropdown | Select trade date |
-| Expiry Dropdown | Select expiry (weekly options) |
-| Compare Checkboxes | Overlay other days for same expiry |
+### Charts and panels
+1. **Support/Resistance Walls** — CE OI (resistance) vs PE OI (support) bars per strike.
+2. **Day Timeline** — spot, Max Pain, and PCR (right axis) through the day; comparison days
+   render as dashed overlays.
+3. **Buildup Map** (table) — per strike: CE/PE OI, ΔOI, buildup label, and zone. Rendered
+   XSS-safe with `createElement`/`textContent` (never `innerHTML` with data).
+4. **Per-strike OI Heatmaps** (CE and PE ΔOI):
+   - **Active-strike filter** (`MIN_PEAK_OI = 1,000,000`) drops dead strikes so the map isn't
+     mostly empty rows.
+   - **Robust color cap** (~90th percentile) prevents one giant ΔOI from washing out the rest.
+   - **Green/red diverging scale**, with **zero mapped to gray** (`#475569`, not the page
+     background) and `xgap`/`ygap` so tiles are individually visible.
+5. **Brewing Moves** cards — one card per accumulated `brewing_today` signal, showing
+   direction/confidence and a `seen HH:MM` (or `seen HH:MM → HH:MM`) timestamp. Empty state:
+   "No strong OI surges seen this session."
 
-### Charts
+### TradingView-style zoom (all charts)
 
-#### 1. Support/Resistance Walls (OI Chart)
+Uniform interaction config in `app.js`:
 
-- Red Bars: CE OI at each strike (resistance levels)
-- Green Bars: PE OI at each strike (support levels)
-- Highest bars indicate strongest S/R zones
-
-#### 2. Day Timeline
-
-- Blue Line: Spot price throughout the day
-- Orange Line: Max Pain level
-- Purple Line (Right Axis): PCR ratio
-- Dashed Lines: Comparison days (when checkboxes selected)
-
-#### 3. Buildup Map (Table)
-
-| Column | Meaning |
-|--------|---------|
-| Strike | Strike price |
-| CE OI | Call Open Interest |
-| CE Delta OI | Change in Call OI |
-| CE Buildup | Long Buildup / Short Buildup / Long Unwinding / Short Covering |
-| PE Buildup | Same for Puts |
-| PE Delta OI | Change in Put OI |
-| PE OI | Put Open Interest |
-| Zone | ATM / ITM / OTM relative to spot |
-
-#### Buildup Color Coding
-
-| Label | Color | Meaning |
-|-------|-------|---------|
-| Long Buildup | Green | OI up, Price up (bullish) |
-| Short Buildup | Red | OI up, Price down (bearish) |
-| Short Covering | Blue | OI down, Price up (bullish exit) |
-| Long Unwinding | Orange | OI down, Price down (bearish exit) |
-
-### Multi-Day Comparison Feature
-
-When multiple days of data exist for the same expiry:
-
-1. Checkboxes appear below the timeline chart
-2. Check a day to overlay its Spot/Max Pain/PCR
-3. Primary day = solid lines
-4. Comparison days = dashed lines with distinct colors
-5. Useful for tracking how an expiry evolves across days
-
----
-
-## 8. 5paisa API Integration
-
-### Authentication Flow
-
-```
-1. Create FivePaisaClient with credentials
-2. Generate TOTP code from secret (RFC 6238)
-3. Call get_totp_session(client_code, totp_code, pin)
-4. Client is now authenticated
-5. Call get_expiry() and get_option_chain()
+```js
+const CHART_CONFIG = {
+  responsive: true, scrollZoom: true,       // wheel zooms
+  doubleClick: "reset",                      // double-click refits
+  displayModeBar: true, displaylogo: false,
+  modeBarButtonsToRemove: ["lasso2d", "select2d", "autoScale2d"],
+};
+const CHART_INTERACTION_LAYOUT = { dragmode: "pan" };  // drag body to pan
 ```
 
-### TOTP Generation
-
-The code auto-generates the 6-digit TOTP code from your secret:
-
-```python
-def _generate_totp(secret: str) -> str:
-    """Generate current TOTP code from secret (RFC 6238)."""
-    key = base64.b32decode(secret.upper() + padding)
-    counter = int(time.time()) // 30
-    hmac_hash = hmac.new(key, counter_bytes, hashlib.sha1).digest()
-    # Dynamic truncation to get 6-digit code
-    return str(code % 1000000).zfill(6)
-```
-
-### API Methods Used
-
-| Method | Purpose |
-|--------|---------|
-| get_totp_session(client_code, totp, pin) | Authenticate |
-| get_expiry("N", "NIFTY") | Get available expiry dates |
-| get_option_chain("N", "NIFTY", expiry_ts) | Get option chain for an expiry |
-
-### Response Transformation
-
-5paisa returns data in their format; we transform to NSE-compatible format:
-
-```python
-# 5paisa format
-{
-    "Options": [
-        {"StrikeRate": 24800, "CPType": "CE", "OpenInterest": 1000, ...}
-    ]
-}
-
-# Transformed to NSE-like format
-{
-    "records": {
-        "underlyingValue": 24812.35,
-        "expiryDates": ["04-Aug-2026", "11-Aug-2026", ...],
-        "data": [
-            {
-                "strikePrice": 24800,
-                "expiryDate": "04-Aug-2026",
-                "CE": {"openInterest": 1000, "changeinOpenInterest": 50, ...},
-                "PE": {...}
-            }
-        ]
-    }
-}
-```
-
----
-
-## 9. GitHub Secrets Setup
-
-### Required Secrets (9 total)
-
-Go to: Repository -> Settings -> Secrets and variables -> Actions -> New repository secret
-
-| Secret Name | Description | Where to Find |
-|-------------|-------------|---------------|
-| FIVEPAISA_APP_NAME | Application name | 5paisa Developer Portal |
-| FIVEPAISA_APP_SOURCE | Application source ID | 5paisa Developer Portal |
-| FIVEPAISA_USER_ID | API User ID | 5paisa Developer Portal |
-| FIVEPAISA_PASSWORD | API Password | 5paisa Developer Portal |
-| FIVEPAISA_USER_KEY | User Key | 5paisa Developer Portal |
-| FIVEPAISA_ENCRYPTION_KEY | Encryption Key | 5paisa Developer Portal |
-| FIVEPAISA_CLIENT_CODE | Your login/client code | Your 5paisa account |
-| FIVEPAISA_TOTP_SECRET | TOTP secret key (base32) | 5paisa 2FA setup screen |
-| FIVEPAISA_PIN | Your trading PIN | Your 5paisa account |
-
-### Getting TOTP Secret
-
-1. Log into 5paisa web/app
-2. Go to Profile -> Settings -> Security
-3. Enable TOTP / Two-Factor Authentication
-4. When shown QR code, look for "Can't scan? Enter manually"
-5. That key (e.g., JBSWY3DPEHPK3PXP) is your TOTP_SECRET
-
-### Getting API Credentials
-
-1. Go to https://www.5paisa.com/developerapi
-2. Register/login as developer
-3. Create an application
-4. Copy APP_NAME, APP_SOURCE, USER_ID, PASSWORD, USER_KEY, ENCRYPTION_KEY
-
----
-
-## 10. Installation and Setup
-
-### Prerequisites
-
-- Python 3.11+
-- Git
-- GitHub account
-- 5paisa trading account with API access
-
-### Step 1: Clone Repository
-
-```bash
-git clone https://github.com/ddtambe/Nifty50_Options.git
-cd Nifty50_Options
-```
-
-### Step 2: Install Dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-### Step 3: Configure GitHub Secrets
-
-Add all 9 secrets as described in Section 9.
-
-### Step 4: Enable GitHub Pages
-
-1. Go to Repository -> Settings -> Pages
-2. Source: Deploy from a branch
-3. Branch: main, Folder: / (root)
-4. Save
-
-### Step 5: Verify Workflow
-
-1. Go to Actions -> fetch-nifty-option-chain
-2. Click "Run workflow" with force=true
-3. Check logs for successful fetch
-
-### Step 6: Access Dashboard
-
-https://ddtambe.github.io/Nifty50_Options/docs/
-
----
-
-## 11. Running Locally
-
-### Set Environment Variables
-
-```bash
-# Windows PowerShell
-$env:FIVEPAISA_APP_NAME = "your_app_name"
-$env:FIVEPAISA_APP_SOURCE = "your_app_source"
-$env:FIVEPAISA_USER_ID = "your_user_id"
-$env:FIVEPAISA_PASSWORD = "your_password"
-$env:FIVEPAISA_USER_KEY = "your_user_key"
-$env:FIVEPAISA_ENCRYPTION_KEY = "your_encryption_key"
-$env:FIVEPAISA_CLIENT_CODE = "your_client_code"
-$env:FIVEPAISA_TOTP_SECRET = "your_totp_secret"
-$env:FIVEPAISA_PIN = "your_pin"
-$env:FORCE_FETCH = "true"  # Optional: bypass market hours
-
-# Linux/Mac
-export FIVEPAISA_APP_NAME="your_app_name"
-# ... etc
-```
-
-### Run Fetch Cycle
-
-```bash
-cd nifty-oc
-python -m nifty_oc.main
-```
-
-### Run Tests
-
-```bash
-python -m pytest -v
-```
-
-### Preview Dashboard Locally
-
-```bash
-python -m http.server 8000 --directory docs
-# Open http://localhost:8000
-```
-
----
-
-## 12. Troubleshooting
-
-### Issue: "Missing credentials" error
-
-**Cause:** Environment variables not set or GitHub secrets not configured.
-
-**Fix:** Verify all 9 secrets are added in GitHub -> Settings -> Secrets.
-
-### Issue: "[skip] outside market hours"
-
-**Cause:** Running outside Mon-Fri 09:15-15:30 IST.
-
-**Fix:** Use manual workflow trigger with force=true.
-
-### Issue: "Illegal header value b'Bearer '"
-
-**Cause:** TOTP authentication failed.
-
-**Fix:** 
-- Verify FIVEPAISA_TOTP_SECRET is the base32 key (not 6-digit code)
-- Verify FIVEPAISA_CLIENT_CODE and FIVEPAISA_PIN are correct
-
-### Issue: "No option chain data received"
-
-**Cause:** API returned empty data or market is closed.
-
-**Fix:** 
-- Run during market hours
-- Check 5paisa account has API access enabled
-- Verify credentials are correct
-
-### Issue: Dashboard shows sample data only
-
-**Cause:** No live data committed yet, or GitHub Pages not updated.
-
-**Fix:**
-- Check if data/ folder exists in GitHub repo
-- Wait 1-5 minutes for GitHub Pages deployment
-- Hard refresh browser (Ctrl+Shift+R)
-
-### Issue: Dashboard shows "No data yet"
-
-**Cause:** data/index.json not accessible.
-
-**Fix:**
-- Verify GitHub Pages source is / (root), not /docs
-- Check that data/index.json exists in repo
-
-### Issue: Workflow fails with exit code 128
-
-**Cause:** Git permission issue.
-
-**Fix:** Ensure repository Settings -> Actions -> Workflow permissions -> "Read and write permissions" is enabled.
+Every `newPlot` spreads `CHART_INTERACTION_LAYOUT`, sets axis `fixedrange: false` (so
+dragging an axis stretches it), and passes `CHART_CONFIG`. On categorical axes (heatmaps),
+axis-drag stretch is "steppy" per cell — a Plotly characteristic, not a bug.
 
 ---
 
 ## 13. Data Formats
 
-### summary.csv
+### `summary.csv` (append)
+`timestamp_ist, trade_date, expiry, spot, atm, pcr, max_pain, support, resistance, ce_oi_total, pe_oi_total, verdict`
 
-```csv
-timestamp,expiry,spot,pcr,max_pain,support,resistance,verdict
-2026-08-04 09:30:00+05:30,2026-08-04,24812.35,0.85,24800,24500,25000,Rangebound
-2026-08-04 09:45:00+05:30,2026-08-04,24850.00,0.88,24800,24500,25000,Bullish
-```
+### `<expiry>_raw.csv` (append)
+`timestamp_ist, expiry, ce_oi, ce_chg_oi, ce_ltp, ce_iv, ce_volume, strike, pe_volume, pe_iv, pe_ltp, pe_chg_oi, pe_oi, ce_buildup, pe_buildup`
 
-### *_raw.csv
+### `<expiry>_buildup.csv` (overwrite — latest snapshot)
+`strike, ce_oi, ce_chg_oi, ce_buildup, pe_oi, pe_chg_oi, pe_buildup, zone_200pt`
 
-```csv
-timestamp,strike,ce_oi,ce_chg_oi,ce_ltp,ce_iv,ce_volume,pe_oi,pe_chg_oi,pe_ltp,pe_iv,pe_volume
-2026-08-04 09:30:00+05:30,21000,50000,1000,3800.5,18.5,25000,1000,50,0.5,45.2,500
-```
-
-### *_buildup.csv
-
-```csv
-strike,ce_oi,ce_chg_oi,ce_buildup,pe_oi,pe_chg_oi,pe_buildup,zone
-21000,50000,1000,Long Buildup,1000,50,Short Covering,OTM
-```
-
-### *.json (Dashboard Feed)
+### `<expiry>.json` (dashboard feed)
 
 ```json
 {
-  "meta": {
-    "expiry": "2026-08-04",
-    "updated_ist": "2026-08-04 15:30:00"
-  },
-  "timeline": [
-    {"t": "09:30", "spot": 24812.35, "pcr": 0.85, "max_pain": 24800},
-    {"t": "09:45", "spot": 24850.00, "pcr": 0.88, "max_pain": 24800}
-  ],
-  "strikes": [
-    {
-      "strike": 21000,
-      "ce_oi": 50000, "ce_chg_oi": 1000, "ce_buildup": "Long Buildup",
-      "pe_oi": 1000, "pe_chg_oi": 50, "pe_buildup": "Short Covering",
-      "zone_200pt": "OTM"
-    }
-  ]
+  "meta":   { "trade_date": "2026-08-11", "expiry": "2026-08-11", "updated_ist": "2026-08-11 15:30" },
+  "timeline": [ { "t": "...", "spot": 24449.55, "pcr": 0.85, "max_pain": 24400,
+                  "ce_oi_total": 0, "pe_oi_total": 0 } ],
+  "strikes":  [ { "strike": 24400, "ce_oi": 0, "ce_chg_oi": 0, "ce_buildup": "Long Buildup",
+                  "pe_oi": 0, "pe_chg_oi": 0, "pe_buildup": "Short Covering", "zone_200pt": "24400-24600", "...": "..." } ],
+  "strikes_timeline": [ { "t": "...", "rows": [ { "strike": 24400, "ce_oi": 0, "pe_oi": 0 } ] } ],
+  "brewing":       [ { "strike": 24400, "leg": "PE", "direction": "BULLISH", "confidence": "HIGH", "windows": ["30min"], "oi_now": 0, "side_of_spot": "below" } ],
+  "brewing_today": [ { "strike": 24400, "leg": "PE", "direction": "BULLISH", "first_seen": "2026-08-11 11:15", "last_seen": "2026-08-11 13:00", "...": "..." } ]
 }
 ```
 
-### data/index.json
+### `index.json`
+`{ "days": [ { "trade_date": "2026-08-11", "expiries": ["2026-08-11", "2026-08-18", "2026-08-25"] } ] }`
 
-```json
-{
-  "days": [
-    {
-      "trade_date": "2026-08-04",
-      "expiries": ["2026-08-04", "2026-08-11", "2026-08-18"]
-    }
-  ]
-}
+---
+
+## 14. GitHub Secrets Setup
+
+Settings → Secrets and variables → Actions → **New repository secret**. All 9 are required:
+
+| Secret Name                | Source                          |
+|----------------------------|---------------------------------|
+| `FIVEPAISA_APP_NAME`       | 5paisa Developer Portal         |
+| `FIVEPAISA_APP_SOURCE`     | 5paisa Developer Portal         |
+| `FIVEPAISA_USER_ID`        | 5paisa Developer Portal         |
+| `FIVEPAISA_PASSWORD`       | 5paisa Developer Portal         |
+| `FIVEPAISA_USER_KEY`       | 5paisa Developer Portal         |
+| `FIVEPAISA_ENCRYPTION_KEY` | 5paisa Developer Portal         |
+| `FIVEPAISA_CLIENT_CODE`    | Your 5paisa account             |
+| `FIVEPAISA_TOTP_SECRET`    | 5paisa 2FA setup (base32 key)   |
+| `FIVEPAISA_PIN`            | Your 5paisa trading PIN         |
+
+**TOTP secret** is the base32 key shown on the 2FA "Can't scan? Enter manually" screen
+(e.g. `JBSWY3DPEHPK3PXP`) — **not** a 6-digit code. The code is regenerated each run.
+
+---
+
+## 15. Install, Run, and Test
+
+### One-time repo setup
+1. Public GitHub repo (free Actions minutes + Pages).
+2. Settings → Actions → General → Workflow permissions → **Read and write**.
+3. Settings → Pages → Source **Deploy from a branch** → default branch, folder **`/ (root)`**
+   (root is required so `data/` at repo root is served; the dashboard fetches `../data`).
+4. Add the 9 secrets (§14).
+
+### Local run (Windows uses `python`, not `python3`)
+
+```bash
+pip install -r requirements.txt
+
+# set the 9 FIVEPAISA_* env vars, then:
+python -m nifty_oc.main            # respects the market-hours guard
+# FORCE_FETCH=true bypasses the guard for a manual test
+
+python -m pytest -q                # run the test suite
+python -m http.server 8000 --directory docs   # preview dashboard at localhost:8000
 ```
 
 ---
 
-## 14. Indicator Calculations
+## 16. Security Considerations
 
-### Put-Call Ratio (PCR)
-
-```
-PCR = Total PE Open Interest / Total CE Open Interest
-```
-
-| PCR Value | Interpretation |
-|-----------|----------------|
-| > 1.2 | Bullish (more puts = hedging) |
-| 0.8 - 1.2 | Neutral |
-| < 0.8 | Bearish (more calls = speculation) |
-
-### Max Pain
-
-The strike price at which option buyers (both calls and puts) would lose the maximum amount of money.
-
-```python
-for each strike:
-    pain = sum of (CE intrinsic value * CE OI) + (PE intrinsic value * PE OI)
-max_pain = strike with minimum total pain
-```
-
-### Buildup Analysis
-
-| OI Change | Price Change | Label | Meaning |
-|-----------|--------------|-------|---------|
-| Increase | Increase | Long Buildup | Fresh longs, bullish |
-| Increase | Decrease | Short Buildup | Fresh shorts, bearish |
-| Decrease | Increase | Short Covering | Shorts exiting, bullish |
-| Decrease | Decrease | Long Unwinding | Longs exiting, bearish |
-
-### Support/Resistance
-
-- **Support:** Strike with highest PE OI (put writers will defend)
-- **Resistance:** Strike with highest CE OI (call writers will defend)
-
-### Verdict Logic
-
-```python
-if spot > max_pain and pcr > 1.0:
-    verdict = "Bullish"
-elif spot < max_pain and pcr < 0.8:
-    verdict = "Bearish"
-else:
-    verdict = "Rangebound"
-```
+- **No secrets in the repo.** All credentials live in GitHub Secrets (encrypted, masked as
+  `***` in logs). The repo is public, but only public market data is committed.
+- **TOTP secret, not codes.** Only the base32 secret is stored; 6-digit codes are derived at
+  runtime and never persisted.
+- **XSS-safe dashboard.** All data-driven DOM uses `createElement` + `textContent`; never
+  `innerHTML` with data.
+- **Fail closed on bad data.** The fetcher raises rather than fabricating a spot, so a
+  corrupt cycle is skipped instead of publishing misleading indicators.
 
 ---
 
-## 15. Security Considerations
+## 17. Troubleshooting
 
-### Secrets Management
-
-- All credentials stored as GitHub Secrets (encrypted)
-- Never committed to repository
-- Masked in workflow logs (shown as ***)
-
-### No Sensitive Data in Repo
-
-- No API keys, passwords, or tokens in any file
-- .gitignore excludes local environment files
-- All option chain data is public market data (not sensitive)
-
-### XSS Prevention
-
-Dashboard uses safe DOM manipulation:
-
-```javascript
-// SAFE: Using textContent (escapes HTML)
-td.textContent = data.value;
-
-// NEVER use methods that interpret HTML with untrusted data
-```
-
-### Repository Visibility
-
-- Repository is PUBLIC for free GitHub Actions minutes and free GitHub Pages
-- This is safe because:
-  - All secrets are in GitHub Secrets (not in repo)
-  - Option chain data is public market data
-  - Dashboard displays only public information
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `[skip] outside market hours` | Weekend, or outside 09:15–15:30 IST | Expected; use `FORCE_FETCH=true` to test. |
+| `[skip] fetch failed (non-fatal): Could not resolve NIFTY spot...` | None of the 3 spot sources returned a value | Confirm `get_expiry` carries `lastrate`; check the market-feed `ExchType` is `C`; inspect one run's `[debug]` logs. |
+| `Missing credentials: ...` | A secret/env var is unset | Add all 9 secrets/vars. |
+| `Illegal header value b'Bearer '` | TOTP auth failed | Verify `TOTP_SECRET` is the base32 key and `CLIENT_CODE`/`PIN` are correct. |
+| Dashboard shows only sample data | No live `data/` yet, or Pages source is `/docs` not `/ (root)` | Set Pages source to root; wait for Pages deploy; hard-refresh. |
+| Brewing panel empty on an old day | That day's feed predates the accumulator | Only cycles after deploying `brewing_today` populate it; not retroactive. |
+| Workflow exit code 128 | Actions lacks write permission | Enable **Read and write permissions**. |
 
 ---
 
-## Appendix A: File Summary
+## 18. Recent Changes (Session Changelog)
 
-| File | Lines | Purpose |
-|------|-------|---------|
-| nifty_oc/main.py | ~50 | Entry point |
-| nifty_oc/config.py | ~17 | Configuration |
-| nifty_oc/clock.py | ~15 | Market hours guard |
-| nifty_oc/fetcher.py | ~180 | 5paisa API |
-| nifty_oc/parser.py | ~60 | Data extraction |
-| nifty_oc/indicators.py | ~80 | Calculations |
-| nifty_oc/snapshot.py | ~100 | Snapshot builder |
-| nifty_oc/writer.py | ~150 | File writers |
-| docs/app.js | ~180 | Dashboard logic |
-| docs/index.html | ~35 | Dashboard HTML |
-| docs/style.css | ~25 | Dashboard CSS |
+All implemented locally (pushed manually by the maintainer). Highlights:
 
----
-
-## Appendix B: URLs Reference
-
-| Resource | URL |
-|----------|-----|
-| GitHub Repository | https://github.com/ddtambe/Nifty50_Options |
-| Live Dashboard | https://ddtambe.github.io/Nifty50_Options/docs/ |
-| Actions/Workflows | https://github.com/ddtambe/Nifty50_Options/actions |
-| Data Folder | https://github.com/ddtambe/Nifty50_Options/tree/main/data |
-| 5paisa Developer Portal | https://www.5paisa.com/developerapi |
-| py5paisa SDK | https://github.com/OpenApi-5p/py5paisa |
+1. **`brewing_today` accumulator** (`writer.py`, `docs/app.js`, `docs/style.css`) — persists
+   every intraday OI surge with `first_seen`/`last_seen`, fixing "Brewing Moves not
+   updating." Additive; never drops a signal.
+2. **Heatmap readability + color** (`docs/app.js`) — active-strike filter
+   (`MIN_PEAK_OI = 1M`), robust ~90th-percentile color cap, green/red diverging scale,
+   gray zero tiles, visible `xgap`/`ygap`.
+3. **TradingView-style axis zoom** (`docs/app.js`) — uniform `CHART_CONFIG` +
+   `CHART_INTERACTION_LAYOUT`: body-drag pan, axis-drag stretch, wheel zoom, double-click
+   reset (spec + plan under `docs/superpowers/`).
+4. **Weekend guard** (`clock.py`) — `weekday() >= 5` returns `False`; stops publishing frozen
+   weekend OI and burning Actions minutes.
+5. **Spot-resolution fix** (`fetcher.py`) — removed the silent `24000.0` fallback; added
+   `_spot_from_expiry_response()` reading the `lastrate` index LTP as the primary source; and
+   corrected the market-feed fallback `ExchType` from `"D"` → `"C"`. Confirmed against a live
+   Actions log that resolved spot `24449.55`.
 
 ---
 
-## Appendix C: Test Coverage
+## 19. Known Limitations and Pending Work
 
-```
-tests/test_clock.py          - 4 tests  (market hours logic)
-tests/test_fetcher.py        - 12 tests (API mocking, credentials)
-tests/test_indicators.py     - 10 tests (PCR, Max Pain, Buildup)
-tests/test_main.py           - 3 tests  (orchestration)
-tests/test_parse.py          - 6 tests  (data extraction)
-tests/test_snapshot.py       - 8 tests  (snapshot building)
-tests/test_writer.py         - 10 tests (file writing)
------------------------------------------
-Total:                         53 tests
-```
+### Known limitations
+- **Not retroactive:** feeds published before the `brewing_today` change won't backfill.
+- **Categorical axis stretch is "steppy"** on heatmaps (Plotly behavior).
+- **Verdict is PCR-only** — `rows`/`atm` are plumbed but not yet used for a spot-vs-max-pain
+  refinement.
 
-Run tests: `python -m pytest -v`
+### Pending: Falling-OI (UNWIND) detection — **not yet implemented**
+
+`signals.py` currently detects **increases** only. Four **intentionally red** tests in
+`tests/test_signals.py` specify the next feature:
+
+- `test_ce_unwind_above_spot_is_bullish`
+- `test_pe_unwind_below_spot_is_bearish`
+- `test_build_tags_kind_build`
+- `test_ce_unwind_pe_build_same_strike_not_pinned`
+
+**Required behavior:**
+- Detect OI **decreases** with symmetric thresholds (mirror of the surge rule).
+- Add a `kind` field: `"BUILD"` (rising OI) vs `"UNWIND"` (falling OI).
+- Direction on unwind: **CE unwind → BULLISH** (resistance melting), **PE unwind → BEARISH**
+  (support melting).
+- **PIN only when the two legs conflict** at a strike — a CE-unwind alongside a PE-build at
+  the same strike is *not* a pin.
+
+This is the single open task; running `python -m pytest -q` today shows **77 passing, 4
+failing** (exactly these UNWIND specs).
+
+---
+
+## 20. Appendix: Module and Test Summary
+
+### Modules
+
+| File                    | Responsibility                                            |
+|-------------------------|-----------------------------------------------------------|
+| `nifty_oc/main.py`      | Orchestrate a cycle; non-fatal fetch skip.                |
+| `nifty_oc/config.py`    | Constants + surge thresholds + market window.             |
+| `nifty_oc/clock.py`     | Weekend + time-window market-hours guard.                 |
+| `nifty_oc/fetcher.py`   | 5paisa TOTP auth, chain fetch, 3-tier spot resolution.    |
+| `nifty_oc/dates.py`     | NSE expiry parse/select.                                  |
+| `nifty_oc/parse.py`     | Raw payload → clean rows (pure).                          |
+| `nifty_oc/indicators.py`| PCR, Max Pain, S/R, buildup, verdict (pure).              |
+| `nifty_oc/signals.py`   | Brewing-move (OI-surge) detection (pure).                 |
+| `nifty_oc/snapshot.py`  | Assemble computed snapshot per expiry.                    |
+| `nifty_oc/writer.py`    | CSV/JSON writers + `brewing_today` accumulator.           |
+| `docs/app.js`           | Dashboard load, charts, heatmaps, zoom config.            |
+
+### Test coverage
+
+`python -m pytest -q` → **81 tests: 77 passing, 4 pending** (the UNWIND specs in §19).
+Test files: `test_clock`, `test_dates`, `test_fetcher`, `test_indicators`, `test_main`,
+`test_parse`, `test_signals`, `test_snapshot`, `test_writer`.
+
+### URLs
+
+| Resource            | URL                                                    |
+|---------------------|--------------------------------------------------------|
+| Repository          | https://github.com/ddtambe/Nifty50_Options             |
+| Live dashboard      | https://ddtambe.github.io/Nifty50_Options/docs/        |
+| Actions             | https://github.com/ddtambe/Nifty50_Options/actions     |
+| 5paisa Developer API| https://www.5paisa.com/developerapi                    |
+| py5paisa SDK        | https://github.com/OpenApi-5p/py5paisa                 |
 
 ---
 
