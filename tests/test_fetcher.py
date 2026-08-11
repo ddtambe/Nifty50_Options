@@ -129,6 +129,50 @@ class TestFetchOptionChain:
                 result = fetch_option_chain()
         assert result["records"]["underlyingValue"] == 24777.7
 
+    def test_fetch_uses_lastrate_spot_from_expiry_response(self):
+        """The get_expiry response carries the NIFTY index LTP in `lastrate`
+        (as seen in the live 5paisa payload). Use it as the spot when the
+        option chain lacks UnderlyingValue — no extra API call required."""
+        mock_client = MagicMock()
+        mock_client.get_expiry.return_value = {
+            "Expiry": [SAMPLE_EXPIRY_TS],
+            "lastrate": [
+                {"Exch": "N", "ExchType": "C", "LTP": 24449.55, "ScripCode": 999920000}
+            ],
+        }
+        mock_client.get_option_chain.return_value = {
+            "Options": [
+                {"StrikeRate": 24800, "CPType": "CE", "OpenInterest": 1000},
+            ]
+        }
+        # Market feed must NOT even be needed when lastrate carries the spot.
+        mock_client.fetch_market_feed_scrip.return_value = []
+
+        with patch.dict(os.environ, MOCK_CREDS):
+            with patch("nifty_oc.fetcher.FivePaisaClient", return_value=mock_client):
+                result = fetch_option_chain()
+        assert result["records"]["underlyingValue"] == 24449.55
+
+    def test_market_feed_fallback_uses_cash_segment_exchtype(self):
+        """The NIFTY index spot lives on the Cash segment (ExchType 'C'),
+        not derivatives ('D'). The market-feed fallback must query the right
+        segment or it silently returns nothing."""
+        mock_client = MagicMock()
+        mock_client.get_expiry.return_value = [SAMPLE_EXPIRY_TS]  # list, no lastrate
+        mock_client.get_option_chain.return_value = {
+            "Options": [
+                {"StrikeRate": 24800, "CPType": "CE", "OpenInterest": 1000},
+            ]
+        }
+        mock_client.fetch_market_feed_scrip.return_value = [{"LTP": 24449.55}]
+
+        with patch.dict(os.environ, MOCK_CREDS):
+            with patch("nifty_oc.fetcher.FivePaisaClient", return_value=mock_client):
+                result = fetch_option_chain()
+        assert result["records"]["underlyingValue"] == 24449.55
+        call_args = mock_client.fetch_market_feed_scrip.call_args[0][0]
+        assert call_args[0]["ExchType"] == "C"
+
     def test_fetch_raises_on_empty_data(self):
         mock_client = MagicMock()
         mock_client.get_expiry.return_value = [SAMPLE_EXPIRY_TS]
