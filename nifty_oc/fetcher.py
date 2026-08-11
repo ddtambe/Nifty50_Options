@@ -113,6 +113,28 @@ def _parse_expiry_date(expiry_obj) -> int:
         raise FetchError(f"Cannot parse expiry date: {expiry_obj}")
 
 
+def _spot_from_expiry_response(expiry_response) -> float | None:
+    """Extract the NIFTY index spot from the get_expiry response.
+
+    5paisa returns the current index LTP alongside the expiry list, e.g.:
+        {"Expiry": [...], "lastrate": [{"ScripCode": 999920000,
+                                        "ExchType": "C", "LTP": 24449.55}], ...}
+    This `lastrate` is the true underlying spot and needs no extra API call,
+    so it is the most reliable source when the option chain omits
+    UnderlyingValue. Returns None if the field is absent or malformed.
+    """
+    if not isinstance(expiry_response, dict):
+        return None
+    lastrate = expiry_response.get("lastrate") or expiry_response.get("LastRate")
+    if isinstance(lastrate, list) and lastrate:
+        first = lastrate[0]
+        if isinstance(first, dict):
+            ltp = first.get("LTP") or first.get("LastRate")
+            if ltp:
+                return float(ltp)
+    return None
+
+
 def _transform_5paisa_to_nse_format(client: FivePaisaClient, num_expiries: int) -> dict:
     """
     Fetch option chain from 5paisa and transform to NSE-like format.
@@ -148,7 +170,10 @@ def _transform_5paisa_to_nse_format(client: FivePaisaClient, num_expiries: int) 
     print(f"[debug] Using expiry timestamps: {expiry_timestamps}")
 
     all_data = []
-    spot_price = None
+    # Primary spot source: the index LTP that 5paisa returns in `lastrate`
+    # alongside the expiry list. The option chain frequently omits
+    # UnderlyingValue, so this is the reliable resolver.
+    spot_price = _spot_from_expiry_response(expiry_response)
     expiry_dates_nse = []
 
     for exp_ts in expiry_timestamps:
@@ -221,14 +246,15 @@ def _transform_5paisa_to_nse_format(client: FivePaisaClient, num_expiries: int) 
     if not all_data:
         raise FetchError("No option chain data received from 5paisa")
 
-    # If we couldn't get spot from options, try market feed
+    # If we couldn't get spot from options, try market feed.
+    # NIFTY index (ScripCode 999920000) lives on the Cash segment (ExchType
+    # "C"), NOT derivatives ("D") — querying "D" silently returns nothing.
     if spot_price is None:
         try:
-            # Fetch NIFTY spot price
-            feed = client.fetch_market_feed_scrip([{"Exch": "N", "ExchType": "D", "ScripCode": 999920000}])
+            feed = client.fetch_market_feed_scrip([{"Exch": "N", "ExchType": "C", "ScripCode": 999920000}])
             if feed and len(feed) > 0:
                 spot_price = feed[0].get("LastRate") or feed[0].get("LTP")
-        except:
+        except Exception:
             pass
 
     # Never fake the spot: a wrong spot silently corrupts confidence,
