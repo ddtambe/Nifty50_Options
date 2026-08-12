@@ -28,6 +28,8 @@ def _display_row(r: dict, expiry: str, prev_ltp: dict) -> dict:
         "ce_iv": ce["iv"], "ce_volume": ce["volume"],
         "pe_oi": pe["oi"], "pe_chg_oi": pe["chg_oi"], "pe_ltp": pe["ltp"],
         "pe_iv": pe["iv"], "pe_volume": pe["volume"],
+        "ce_best_bid": ce.get("best_bid", 0.0), "ce_best_ask": ce.get("best_ask", 0.0),
+        "pe_best_bid": pe.get("best_bid", 0.0), "pe_best_ask": pe.get("best_ask", 0.0),
         "ce_buildup": _buildup_for(ce, (expiry, strike, "CE"), prev_ltp),
         "pe_buildup": _buildup_for(pe, (expiry, strike, "PE"), prev_ltp),
         "zone_200pt": indicators.zone_200(strike),
