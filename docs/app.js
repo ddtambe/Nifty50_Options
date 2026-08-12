@@ -146,6 +146,7 @@ async function renderSelected() {
   }
 
   renderBrewing(currentFeed);
+  renderMoneyness(currentFeed);
   renderKeyLevels();
   renderWalls(currentFeed);
   renderOiTimeline(currentFeed);
@@ -372,6 +373,96 @@ function brewingSeenText(s) {
   return "seen " + (first || last);
 }
 
+const MONEYNESS_SUBTITLE = {
+  ATM: "liquidity / volatility",
+  OTM: "informed direction",
+  ITM: "negligible",
+};
+
+function moneynessSharePct(frac) {
+  return Math.round((frac || 0) * 100) + "%";
+}
+
+function createMoneynessCard(name, b) {
+  const card = document.createElement("div");
+  card.className = "moneyness-card mny-" + name.toLowerCase();
+
+  const head = document.createElement("div");
+  head.className = "mny-head";
+  const title = document.createElement("span");
+  title.className = "mny-title";
+  title.textContent = name;
+  const sub = document.createElement("span");
+  sub.className = "mny-sub";
+  sub.textContent = MONEYNESS_SUBTITLE[name] || "";
+  head.appendChild(title);
+  head.appendChild(sub);
+  card.appendChild(head);
+
+  const share = document.createElement("div");
+  share.className = "mny-share";
+  share.textContent = "Volume share: " + moneynessSharePct(b.volume_share);
+  card.appendChild(share);
+
+  const pos = b.vol_pos || 0;
+  const neg = b.vol_neg || 0;
+  const denom = pos + neg;
+  const bar = document.createElement("div");
+  bar.className = "mny-bar";
+  const posSeg = document.createElement("div");
+  posSeg.className = "mny-bar-pos";
+  posSeg.style.width = (denom ? (pos / denom) * 100 : 0) + "%";
+  const negSeg = document.createElement("div");
+  negSeg.className = "mny-bar-neg";
+  negSeg.style.width = (denom ? (neg / denom) * 100 : 0) + "%";
+  bar.appendChild(posSeg);
+  bar.appendChild(negSeg);
+  card.appendChild(bar);
+
+  const flow = document.createElement("div");
+  flow.className = "mny-flow";
+  const posEl = document.createElement("span");
+  posEl.className = "mny-pos";
+  posEl.textContent = "vol+ " + formatNumber(pos);
+  const negEl = document.createElement("span");
+  negEl.className = "mny-neg";
+  negEl.textContent = "vol- " + formatNumber(neg);
+  const ib = b.imbalance || 0;
+  const ibEl = document.createElement("span");
+  ibEl.className = "mny-ib";
+  ibEl.textContent = "IB " + (ib >= 0 ? "+" : "-") + formatNumber(Math.abs(ib));
+  flow.appendChild(posEl);
+  flow.appendChild(negEl);
+  flow.appendChild(ibEl);
+  card.appendChild(flow);
+
+  const pcr = document.createElement("div");
+  pcr.className = "mny-pcr";
+  const pcrVal = Number.isFinite(b.pcr) ? b.pcr.toFixed(2) : "0.00";
+  pcr.textContent = "PCR: " + pcrVal;
+  card.appendChild(pcr);
+
+  return card;
+}
+
+function renderMoneyness(feed) {
+  const section = document.getElementById("moneynessSection");
+  const grid = document.getElementById("moneynessGrid");
+  if (!section || !grid) return;
+  const mny = feed && feed.moneyness;
+  const buckets = mny && mny.buckets;
+  if (!buckets || !mny.total_volume) {
+    section.style.display = "none";   // graceful hide when absent/empty
+    return;
+  }
+  section.style.display = "";
+  clearNode(grid);
+  ["ATM", "OTM", "ITM"].forEach((name) => {
+    const b = buckets[name];
+    if (b) grid.appendChild(createMoneynessCard(name, b));
+  });
+}
+
 function renderBrewing(feed) {
   const container = document.getElementById("brewingGrid");
   clearNode(container);
@@ -441,7 +532,7 @@ function renderOiTimeline(feed) {
     font: { color: "#e2e8f0" },
     margin: { t: 10 },
     yaxis: { title: "Open Interest", fixedrange: false },
-    xaxis: { title: "Time (15-min intervals)", fixedrange: false },
+    xaxis: { title: "Time (5-min intervals)", fixedrange: false },
     legend: { orientation: "h", y: -0.2 }
   }, CHART_CONFIG);
 }
@@ -537,7 +628,7 @@ function renderOiHeatmaps(feed) {
       plot_bgcolor: "#1e293b",
       font: { color: "#e2e8f0" },
       margin: { t: 10, l: 60 },
-      xaxis: { title: "Time (15-min intervals)", fixedrange: false },
+      xaxis: { title: "Time (5-min intervals)", fixedrange: false },
       yaxis: { title: "Strike", type: "category", fixedrange: false },
     }, CHART_CONFIG);
   };
