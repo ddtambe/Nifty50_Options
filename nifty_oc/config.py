@@ -28,7 +28,7 @@ MONEYNESS_ATM_LOW = 0.98
 MONEYNESS_ATM_HIGH = 1.02
 
 MARKET_OPEN = (9, 15)   # IST hh, mm
-MARKET_CLOSE = (15, 30)  # IST hh, mm
+MARKET_CLOSE = (23, 30)  # IST hh, mm
 
 DATA_DIR = "data"
 DOCS_DIR = "docs"
