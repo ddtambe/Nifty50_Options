@@ -12,13 +12,16 @@ def extract_expiries(payload: dict, count: int) -> list[str]:
 
 def _leg(node: dict | None) -> dict:
     if not node:
-        return {"oi": 0, "chg_oi": 0, "ltp": 0.0, "iv": 0.0, "volume": 0}
+        return {"oi": 0, "chg_oi": 0, "ltp": 0.0, "iv": 0.0, "volume": 0,
+                "best_bid": 0.0, "best_ask": 0.0}
     return {
         "oi": node.get("openInterest", 0),
         "chg_oi": node.get("changeinOpenInterest", 0),
         "ltp": node.get("lastPrice", 0.0),
         "iv": node.get("impliedVolatility", 0.0),
         "volume": node.get("totalTradedVolume", 0),
+        "best_bid": node.get("bestBid", 0.0),
+        "best_ask": node.get("bestAsk", 0.0),
     }
 
 
