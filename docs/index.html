@@ -17,6 +17,11 @@
     </div>
   </header>
   <main>
+    <section id="moneynessSection">
+      <h2>Moneyness Comparison (ATM / OTM / ITM)</h2>
+      <p class="chart-hint">Signed order flow by moneyness, per the Blasco–Corredor–Santamaría study: OTM carries informed direction, ATM is liquidity/volatility, ITM is negligible. vol+ = calls bought + puts sold (bullish); vol− = calls sold + puts bought (bearish); IB = vol+ − vol−. <strong>5-min quote-rule proxy</strong> — not the paper's per-trade signed volume.</p>
+      <div class="moneyness-grid" id="moneynessGrid"></div>
+    </section>
     <section id="brewingSection">
       <h2>⚡ Brewing Moves (OI surges — where a move is building)</h2>
       <p class="chart-hint">PE OI surging = support building → favor CE. CE OI surging = resistance building → favor PE. Both legs surging = pin (rangebound). HIGH = both windows agree, or the textbook side of spot.</p>
@@ -41,7 +46,7 @@
       <div id="timelineChart"></div>
     </section>
     <section>
-      <h2>Total OI Over Time (every 15 min) — CE vs PE</h2>
+      <h2>Total OI Over Time (every 5 min) — CE vs PE</h2>
       <div id="oiTimelineChart"></div>
     </section>
     <section>
@@ -55,7 +60,7 @@
     <section><h2>Buildup Map (latest snapshot)</h2><div id="buildupTable"></div></section>
   </main>
   <footer>
-    <p>Data auto-updates every ~15 min during market hours. Not financial advice; you decide the trade.</p>
+    <p>Data auto-updates every ~5 min during market hours. Not financial advice; you decide the trade.</p>
   </footer>
   <script src="app.js"></script>
 </body>
