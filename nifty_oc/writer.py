@@ -5,6 +5,7 @@ import logging
 import os
 
 from nifty_oc import signals
+from nifty_oc import moneyness
 from nifty_oc.config import (
     SURGE_PCT_THRESHOLD, SURGE_ABS_THRESHOLD, SURGE_WINDOWS,
 )
@@ -118,7 +119,8 @@ def write_json_feed(snapshot: dict, data_dir: str) -> None:
                 feed = json.load(f)
         else:
             feed = {"meta": {}, "timeline": [], "strikes": [],
-                    "strikes_timeline": [], "brewing": [], "brewing_today": []}
+                    "strikes_timeline": [], "brewing": [], "brewing_today": [],
+                    "moneyness": {}}
         feed["meta"] = {
             "trade_date": snapshot["trade_date"], "expiry": e["expiry"],
             "updated_ist": snapshot["timestamp"],
@@ -128,14 +130,40 @@ def write_json_feed(snapshot: dict, data_dir: str) -> None:
             "pcr": e["pcr"], "max_pain": e["max_pain"],
             "ce_oi_total": e["ce_oi_total"], "pe_oi_total": e["pe_oi_total"],
         })
-        feed.setdefault("strikes_timeline", []).append({
+        st = feed.setdefault("strikes_timeline", [])
+        prev_by_strike = {row["strike"]: row for row in (st[-1]["rows"] if st else [])}
+        st.append({
             "t": snapshot["timestamp"],
             "rows": [
-                {"strike": r["strike"], "ce_oi": r["ce_oi"], "pe_oi": r["pe_oi"]}
+                {"strike": r["strike"], "ce_oi": r["ce_oi"], "pe_oi": r["pe_oi"],
+                 "ce_volume": r["ce_volume"], "pe_volume": r["pe_volume"],
+                 "ce_ltp": r["ce_ltp"], "pe_ltp": r["pe_ltp"]}
                 for r in e["display_rows"]
             ],
         })
         feed["strikes"] = e["display_rows"]
+
+        # Interval ΔVolume + previous LTP (from the prior snapshot) feed the
+        # quote-rule signing. First snapshot has no prior -> ΔV = 0, no flow.
+        # `prev` may be a row written by pre-feature code (only strike/ce_oi/
+        # pe_oi) on a mid-day deploy, so read its fields defensively: a missing
+        # baseline degrades ΔV to 0 and the LTP-prev to "now" — exactly the
+        # first-snapshot path — instead of raising and killing the write cycle.
+        moneyness_rows = []
+        for r in e["display_rows"]:
+            prev = prev_by_strike.get(r["strike"])
+            moneyness_rows.append({
+                **r,
+                "ce_dvol": max(0, r["ce_volume"] - prev.get("ce_volume", r["ce_volume"])) if prev else 0,
+                "pe_dvol": max(0, r["pe_volume"] - prev.get("pe_volume", r["pe_volume"])) if prev else 0,
+                "ce_ltp_prev": prev.get("ce_ltp", r["ce_ltp"]) if prev else r["ce_ltp"],
+                "pe_ltp_prev": prev.get("pe_ltp", r["pe_ltp"]) if prev else r["pe_ltp"],
+            })
+        try:
+            feed["moneyness"] = moneyness.moneyness_panel(moneyness_rows, snapshot["spot"])
+        except Exception:  # panel must never break the fetch/write
+            _log.exception("moneyness panel failed for %s", e["expiry"])
+            feed["moneyness"] = {}
         try:
             feed["brewing"] = signals.detect_brewing(
                 feed["strikes_timeline"], snapshot["spot"],
