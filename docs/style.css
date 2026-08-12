@@ -80,3 +80,34 @@ footer { padding: 16px 24px; color: #94a3b8; font-size: 12px; }
 .heatmap-title { font-size: 13px; margin: 12px 0 4px; }
 .heatmap-title.ce { color: #ef4444; }
 .heatmap-title.pe { color: #22c55e; }
+
+/* --- Moneyness comparison panel --- */
+#moneynessSection { margin-bottom: 1.5rem; }
+.moneyness-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+}
+@media (max-width: 720px) {
+  .moneyness-grid { grid-template-columns: 1fr; }
+}
+.moneyness-card {
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+  color: #e2e8f0;
+}
+.moneyness-card.mny-otm { border-color: #38bdf8; }   /* highlight the informed bucket */
+.mny-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 0.5rem; }
+.mny-title { font-size: 1.15rem; font-weight: 700; letter-spacing: 0.03em; }
+.mny-sub { font-size: 0.72rem; color: #94a3b8; text-transform: uppercase; }
+.mny-share { font-size: 0.85rem; color: #cbd5e1; margin-bottom: 0.4rem; }
+.mny-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: #0f172a; margin-bottom: 0.4rem; }
+.mny-bar-pos { background: #22c55e; }
+.mny-bar-neg { background: #ef4444; }
+.mny-flow { display: flex; gap: 0.75rem; font-size: 0.85rem; margin-bottom: 0.3rem; }
+.mny-pos { color: #22c55e; }
+.mny-neg { color: #ef4444; }
+.mny-ib { color: #e2e8f0; font-weight: 600; }
+.mny-pcr { font-size: 0.9rem; color: #cbd5e1; }
