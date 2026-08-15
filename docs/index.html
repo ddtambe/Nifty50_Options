@@ -17,6 +17,11 @@
     </div>
   </header>
   <main>
+    <section id="tradeReadSection">
+      <h2>Trade Read — CE or PE, and which strike</h2>
+      <p class="chart-hint">Fuses the PCR verdict with the brewing OI-surge signal for direction, then picks the strike from confirmed OTM buying (Long Buildup + net buy volume via the quote rule) per the Blasco–Corredor–Santamaría study: OTM carries the informed/directional signal, ATM is volatility-driven, ITM is excluded. Informational only — you decide the trade.</p>
+      <div id="tradeReadCard"></div>
+    </section>
     <section id="moneynessSection">
       <h2>Moneyness Comparison (ATM / OTM / ITM)</h2>
       <p class="chart-hint">Signed order flow by moneyness, per the Blasco–Corredor–Santamaría study: OTM carries informed direction, ATM is liquidity/volatility, ITM is negligible. vol+ = calls bought + puts sold (bullish); vol− = calls sold + puts bought (bearish); IB = vol+ − vol−. <strong>5-min quote-rule proxy</strong> — not the paper's per-trade signed volume.</p>
