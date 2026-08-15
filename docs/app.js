@@ -7,10 +7,12 @@ let currentFeed = null;
 let allExpiryFeeds = {};
 
 // --- Shared TradingView-style chart interaction (applied to all charts) ---
-// Body-drag pans, axis-drag stretches each axis, wheel zooms, dbl-click resets.
+// Body-drag pans, axis-drag stretches each axis, toolbar Zoom button (or the
+// zoom-in/out buttons) zooms, dbl-click resets. Scroll wheel always scrolls
+// the page, even over a chart — it never captures the wheel for zoom.
 const CHART_CONFIG = {
   responsive: true,
-  scrollZoom: true,            // scroll wheel zooms
+  scrollZoom: false,           // page scroll wins; zoom via drag-box/toolbar buttons
   doubleClick: "reset",        // double-click returns to fitted view
   displayModeBar: true,        // keep toolbar visible for discoverability
   displaylogo: false,
@@ -18,6 +20,13 @@ const CHART_CONFIG = {
 };
 const CHART_INTERACTION_LAYOUT = {
   dragmode: "pan",             // drag chart body to pan
+};
+
+// Shared light theme for every Plotly chart (paper/plot background + font).
+const CHART_THEME = {
+  paper_bgcolor: "#ffffff",
+  plot_bgcolor: "#ffffff",
+  font: { color: "#1e293b" },
 };
 
 async function fetchJson(path) {
@@ -580,10 +589,8 @@ function renderWalls(feed) {
     { x: strikes, y: strikesToShow.map((r) => r.pe_oi), name: "PE OI (support)", type: "bar", marker: { color: "#22c55e" } },
   ], {
     ...CHART_INTERACTION_LAYOUT,
+    ...CHART_THEME,
     barmode: "group",
-    paper_bgcolor: "#1e293b",
-    plot_bgcolor: "#1e293b",
-    font: { color: "#e2e8f0" },
     margin: { t: 10 },
     xaxis: { title: viewMode === "atm" ? "Strikes (ATM ± 500)" : "Strikes (Full Range)", fixedrange: false },
     yaxis: { fixedrange: false }
@@ -602,9 +609,7 @@ function renderOiTimeline(feed) {
     { x: t, y: peOi, name: "Total PE OI", type: "scatter", mode: "lines+markers", line: { color: "#22c55e", width: 2 } },
   ], {
     ...CHART_INTERACTION_LAYOUT,
-    paper_bgcolor: "#1e293b",
-    plot_bgcolor: "#1e293b",
-    font: { color: "#e2e8f0" },
+    ...CHART_THEME,
     margin: { t: 10 },
     yaxis: { title: "Open Interest", fixedrange: false },
     xaxis: { title: "Time (5-min intervals)", fixedrange: false },
@@ -669,12 +674,13 @@ function renderOiHeatmaps(feed) {
     return mags[Math.floor(mags.length * 0.9)] || mags[mags.length - 1];
   };
 
-  // Zero maps to a VISIBLE slate-gray tile (not the plot background) so every
-  // cell reads as a distinct tile; strong build=green, strong unwind=red.
+  // Zero maps to a VISIBLE gray tile (not the white plot background) so every
+  // cell reads as a distinct tile; blue/orange give more contrast against a
+  // light background and more separation between hues than red/green did.
   const diverging = [
-    [0, "#ef4444"],    // strong negative -> red (unwind)
-    [0.5, "#475569"],  // zero -> visible gray tile (NOT theme bg)
-    [1, "#22c55e"],    // strong positive -> green (build)
+    [0, "#2563eb"],    // strong negative -> blue (unwind)
+    [0.5, "#e2e8f0"],  // zero -> visible gray tile (NOT theme bg)
+    [1, "#f97316"],    // strong positive -> orange (build)
   ];
 
   const plotLeg = (divId, leg) => {
@@ -699,9 +705,7 @@ function renderOiHeatmaps(feed) {
       colorbar: { title: "ΔOI (capped)" },
     }], {
       ...CHART_INTERACTION_LAYOUT,
-      paper_bgcolor: "#1e293b",
-      plot_bgcolor: "#1e293b",
-      font: { color: "#e2e8f0" },
+      ...CHART_THEME,
       margin: { t: 10, l: 60 },
       xaxis: { title: "Time (5-min intervals)", fixedrange: false },
       yaxis: { title: "Strike", type: "category", fixedrange: false },
@@ -788,9 +792,7 @@ async function renderTimelineWithCompare(primaryFeed, primaryDay, expiry, compar
 
   Plotly.newPlot("timelineChart", traces, {
     ...CHART_INTERACTION_LAYOUT,
-    paper_bgcolor: "#1e293b",
-    plot_bgcolor: "#1e293b",
-    font: { color: "#e2e8f0" },
+    ...CHART_THEME,
     margin: { t: 10 },
     yaxis: { title: "Price", fixedrange: false },
     yaxis2: { title: "PCR", overlaying: "y", side: "right", fixedrange: false },
