@@ -6,6 +6,7 @@ import os
 
 from nifty_oc import signals
 from nifty_oc import moneyness
+from nifty_oc import trade_read as trade_read_mod
 from nifty_oc.config import (
     SURGE_PCT_THRESHOLD, SURGE_ABS_THRESHOLD, SURGE_WINDOWS,
 )
@@ -120,7 +121,7 @@ def write_json_feed(snapshot: dict, data_dir: str) -> None:
         else:
             feed = {"meta": {}, "timeline": [], "strikes": [],
                     "strikes_timeline": [], "brewing": [], "brewing_today": [],
-                    "moneyness": {}}
+                    "moneyness": {}, "trade_read": {}}
         feed["meta"] = {
             "trade_date": snapshot["trade_date"], "expiry": e["expiry"],
             "updated_ist": snapshot["timestamp"],
@@ -176,6 +177,13 @@ def write_json_feed(snapshot: dict, data_dir: str) -> None:
             _log.exception("brewing detection failed for %s", e["expiry"])
             feed["brewing"] = []
             feed.setdefault("brewing_today", [])
+        try:
+            feed["trade_read"] = trade_read_mod.trade_read(
+                e["verdict"], feed["brewing"], moneyness_rows, snapshot["spot"],
+            )
+        except Exception:  # trade read must never break the fetch/write
+            _log.exception("trade read failed for %s", e["expiry"])
+            feed["trade_read"] = {}
         with open(path, "w") as f:
             json.dump(feed, f)
 
