@@ -145,6 +145,7 @@ async function renderSelected() {
     }
   }
 
+  renderTradeRead(currentFeed);
   renderBrewing(currentFeed);
   renderMoneyness(currentFeed);
   renderKeyLevels();
@@ -461,6 +462,80 @@ function renderMoneyness(feed) {
     const b = buckets[name];
     if (b) grid.appendChild(createMoneynessCard(name, b));
   });
+}
+
+const TRADE_READ_SIDE_LABEL = { CE: "BUY CE", PE: "BUY PE" };
+
+function createTradeReadCard(tr) {
+  const card = document.createElement("div");
+  card.className = "trade-read-card side-" + (tr.side ? tr.side.toLowerCase() : "mixed");
+
+  const head = document.createElement("div");
+  head.className = "tr-head";
+
+  const sideEl = document.createElement("span");
+  sideEl.className = "tr-side";
+  sideEl.textContent = tr.side ? TRADE_READ_SIDE_LABEL[tr.side] : "MIXED — no clear read";
+  head.appendChild(sideEl);
+
+  if (tr.confidence) {
+    const conf = document.createElement("span");
+    conf.className = "tr-conf conf-" + tr.confidence.toLowerCase();
+    conf.textContent = tr.confidence;
+    head.appendChild(conf);
+  }
+  card.appendChild(head);
+
+  const reason = document.createElement("div");
+  reason.className = "tr-reason";
+  reason.textContent = tr.reason;
+  card.appendChild(reason);
+
+  if (tr.side && tr.strike) {
+    const strikeRow = document.createElement("div");
+    strikeRow.className = "tr-strike-row";
+
+    const strikeEl = document.createElement("span");
+    strikeEl.className = "tr-strike";
+    strikeEl.textContent = "Strike " + tr.strike;
+    strikeRow.appendChild(strikeEl);
+
+    if (tr.strike_confidence) {
+      const sc = document.createElement("span");
+      sc.className = "tr-conf conf-" + tr.strike_confidence.toLowerCase();
+      sc.textContent = tr.strike_confidence;
+      strikeRow.appendChild(sc);
+    }
+    card.appendChild(strikeRow);
+
+    const strikeReason = document.createElement("div");
+    strikeReason.className = "tr-strike-reason";
+    strikeReason.textContent = tr.strike_reason;
+    card.appendChild(strikeReason);
+  }
+
+  if (tr.note) {
+    const note = document.createElement("div");
+    note.className = "tr-note";
+    note.textContent = tr.note;
+    card.appendChild(note);
+  }
+
+  return card;
+}
+
+function renderTradeRead(feed) {
+  const section = document.getElementById("tradeReadSection");
+  const container = document.getElementById("tradeReadCard");
+  if (!section || !container) return;
+  const tr = feed && feed.trade_read;
+  if (!tr || !tr.reason) {
+    section.style.display = "none";   // graceful hide when absent (older feeds)
+    return;
+  }
+  section.style.display = "";
+  clearNode(container);
+  container.appendChild(createTradeReadCard(tr));
 }
 
 function renderBrewing(feed) {
