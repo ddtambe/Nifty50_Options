@@ -55,6 +55,27 @@ footer { padding: 16px 24px; color: #94a3b8; font-size: 12px; }
 
 #keyLevelsSection { background: transparent; padding: 0; }
 
+/* Trade Read card */
+#tradeReadSection { border: 1px solid #334155; }
+.trade-read-card { background: #0f172a; border-radius: 8px; padding: 14px 16px; border-left: 4px solid #64748b; }
+.trade-read-card.side-ce { border-left-color: #22c55e; }
+.trade-read-card.side-pe { border-left-color: #ef4444; }
+.trade-read-card.side-mixed { border-left-color: #f59e0b; }
+.tr-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+.tr-side { font-size: 20px; font-weight: 700; color: #e2e8f0; }
+.trade-read-card.side-ce .tr-side { color: #22c55e; }
+.trade-read-card.side-pe .tr-side { color: #ef4444; }
+.trade-read-card.side-mixed .tr-side { color: #f59e0b; }
+.tr-conf { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 4px; }
+.conf-high { background: #14532d; color: #4ade80; }
+.conf-medium { background: #334155; color: #cbd5e1; }
+.conf-low { background: #1e293b; color: #94a3b8; }
+.tr-reason { font-size: 13px; color: #94a3b8; margin-bottom: 8px; }
+.tr-strike-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.tr-strike { font-size: 22px; font-weight: 700; color: #e2e8f0; }
+.tr-strike-reason { font-size: 12px; color: #94a3b8; margin-bottom: 4px; }
+.tr-note { font-size: 11px; color: #64748b; font-style: italic; margin-top: 6px; }
+
 /* Brewing Moves panel */
 .brewing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
 .brewing-card { background: #0f172a; border-radius: 8px; padding: 12px; border-left: 4px solid #64748b; }
