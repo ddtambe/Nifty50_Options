@@ -562,7 +562,7 @@ function renderMoneyness(feed) {
 
 const TRADE_READ_SIDE_LABEL = { CE: "BUY CE", PE: "BUY PE" };
 
-function createTradeReadCard(tr) {
+function createTradeReadCard(tr, decidedAt) {
   const card = document.createElement("div");
   card.className = "trade-read-card side-" + (tr.side ? tr.side.toLowerCase() : "mixed");
 
@@ -581,6 +581,13 @@ function createTradeReadCard(tr) {
     head.appendChild(conf);
   }
   card.appendChild(head);
+
+  if (decidedAt) {
+    const decided = document.createElement("div");
+    decided.className = "tr-decided";
+    decided.textContent = "Decided " + decidedAt;
+    card.appendChild(decided);
+  }
 
   const reason = document.createElement("div");
   reason.className = "tr-reason";
@@ -620,6 +627,49 @@ function createTradeReadCard(tr) {
   return card;
 }
 
+// One-line summary of a Trade Read, reused by the live card and the history.
+function tradeReadLine(tr) {
+  const side = tr.side ? TRADE_READ_SIDE_LABEL[tr.side] : "No clear read";
+  if (tr.side && tr.strike) {
+    const sc = tr.strike_confidence ? " (" + tr.strike_confidence + ")" : "";
+    return side + " · Strike " + tr.strike + sc;
+  }
+  return side;
+}
+
+// The day's decision log: newest read on top, each stamped with the time it
+// was first decided (and a range if it stayed current across cycles).
+function createTradeReadHistory(history) {
+  const wrap = document.createElement("div");
+  wrap.className = "tr-history";
+
+  const title = document.createElement("div");
+  title.className = "tr-history-title";
+  title.textContent = "Read history (today)";
+  wrap.appendChild(title);
+
+  for (let i = history.length - 1; i >= 0; i--) {
+    const h = history[i];
+    const row = document.createElement("div");
+    row.className = "tr-history-row";
+
+    const first = brewingTime(h.first_seen);
+    const last = brewingTime(h.last_seen);
+    const time = document.createElement("span");
+    time.className = "tr-history-time";
+    time.textContent = first && last && first !== last ? first + "–" + last : (first || last || "");
+    row.appendChild(time);
+
+    const label = document.createElement("span");
+    label.className = "tr-history-label" + (h.side ? " side-" + h.side.toLowerCase() : "");
+    label.textContent = tradeReadLine(h) + (h.confidence ? " · " + h.confidence : "");
+    row.appendChild(label);
+
+    wrap.appendChild(row);
+  }
+  return wrap;
+}
+
 function renderTradeRead(feed) {
   const section = document.getElementById("tradeReadSection");
   const container = document.getElementById("tradeReadCard");
@@ -631,7 +681,35 @@ function renderTradeRead(feed) {
   }
   section.style.display = "";
   clearNode(container);
-  container.appendChild(createTradeReadCard(tr));
+
+  // "Decided" time = when the current read was first reached (from the running
+  // log); fall back to the feed's update time for older feeds without a log.
+  const history = (feed && feed.trade_read_today) || [];
+  const newest = history.length ? history[history.length - 1] : null;
+  const decidedAt = newest
+    ? brewingTime(newest.first_seen)
+    : brewingTime(feed && feed.meta && feed.meta.updated_ist);
+
+  container.appendChild(createTradeReadCard(tr, decidedAt));
+  if (history.length) container.appendChild(createTradeReadHistory(history));
+}
+
+const BREWING_CONF_RANK = { HIGH: 0, MEDIUM: 1 };
+
+// HIGH cards first, then MEDIUM; within each confidence group the most
+// recently active surge (largest last_seen) sits on top. Returns a new array
+// so the source feed is never mutated. Ties (e.g. live signals with no
+// last_seen) keep their incoming order via the engine's stable sort — that
+// order is already confidence + OI-size ranked by detect_brewing().
+function sortBrewingForDisplay(signals) {
+  return [...signals].sort((a, b) => {
+    const rankA = BREWING_CONF_RANK[a.confidence] ?? 2;
+    const rankB = BREWING_CONF_RANK[b.confidence] ?? 2;
+    if (rankA !== rankB) return rankA - rankB;
+    const seenA = a.last_seen || "";
+    const seenB = b.last_seen || "";
+    return seenA < seenB ? 1 : seenA > seenB ? -1 : 0; // newer last_seen first
+  });
 }
 
 function renderBrewing(feed) {
@@ -641,7 +719,7 @@ function renderBrewing(feed) {
   // to the live snapshot for older feeds that predate brewing_today.
   const today = (feed && feed.brewing_today) || [];
   const live = (feed && feed.brewing) || [];
-  const signals = today.length ? today : live;
+  const signals = sortBrewingForDisplay(today.length ? today : live);
   if (signals.length === 0) {
     const empty = document.createElement("div");
     empty.className = "brewing-empty";
@@ -770,8 +848,15 @@ function renderOiHeatmaps(feed) {
     [1, "#f97316"],    // strong positive -> orange (build)
   ];
 
+  // Shared y-axis: the union of strikes active on EITHER leg, so the CE and PE
+  // panels line up row-for-row and the same strike sits at the same height on
+  // both. (Per-leg filtering gave CE its high-strike band and PE its low-strike
+  // band, so the two axes never matched.)
+  const sharedSet = new Set([...activeStrikes("ce_oi"), ...activeStrikes("pe_oi")]);
+  const sharedStrikes = allStrikes.filter((strike) => sharedSet.has(strike));
+
   const plotLeg = (divId, leg) => {
-    const strikes = activeStrikes(leg);
+    const strikes = sharedStrikes;
     if (!strikes.length) { Plotly.purge(divId); return; }
     const { z, abs } = buildMatrices(leg, strikes);
     const cap = robustCap(z);
