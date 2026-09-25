@@ -67,6 +67,33 @@ def _accumulate_brewing_today(existing: list, current: list, ts: str) -> list:
     return [by_key[key] for key in order]
 
 
+_TRADE_READ_KEYS = ("side", "confidence", "strike", "strike_confidence")
+
+
+def _trade_read_signature(tr: dict) -> tuple:
+    """The decision identity — two reads are 'the same' iff these all match."""
+    return tuple(tr.get(k) for k in _TRADE_READ_KEYS)
+
+
+def _accumulate_trade_read_today(existing: list, current: dict, ts: str) -> list:
+    """Append the current Trade Read to the day's running log.
+
+    Additive only: past reads are never dropped. A new entry is added only when
+    the decision actually changes (side/strike/confidence); an unchanged read
+    just extends the last entry's `last_seen`. Empty/no-decision cycles (no
+    `reason`) are ignored. Each entry records when it was first decided
+    (`first_seen`) and when it was last still current (`last_seen`).
+    """
+    history = list(existing)
+    if not current or not current.get("reason"):
+        return history
+    if history and _trade_read_signature(history[-1]) == _trade_read_signature(current):
+        history[-1] = {**history[-1], "last_seen": ts}
+        return history
+    history.append({**current, "first_seen": ts, "last_seen": ts})
+    return history
+
+
 def _append_rows(path: str, header: list, rows: list) -> None:
     exists = os.path.exists(path)
     with open(path, "a", newline="") as f:
@@ -121,7 +148,7 @@ def write_json_feed(snapshot: dict, data_dir: str) -> None:
         else:
             feed = {"meta": {}, "timeline": [], "strikes": [],
                     "strikes_timeline": [], "brewing": [], "brewing_today": [],
-                    "moneyness": {}, "trade_read": {}}
+                    "moneyness": {}, "trade_read": {}, "trade_read_today": []}
         feed["meta"] = {
             "trade_date": snapshot["trade_date"], "expiry": e["expiry"],
             "updated_ist": snapshot["timestamp"],
@@ -181,9 +208,14 @@ def write_json_feed(snapshot: dict, data_dir: str) -> None:
             feed["trade_read"] = trade_read_mod.trade_read(
                 e["verdict"], feed["brewing"], moneyness_rows, snapshot["spot"],
             )
+            feed["trade_read_today"] = _accumulate_trade_read_today(
+                feed.get("trade_read_today", []), feed["trade_read"],
+                snapshot["timestamp"],
+            )
         except Exception:  # trade read must never break the fetch/write
             _log.exception("trade read failed for %s", e["expiry"])
             feed["trade_read"] = {}
+            feed.setdefault("trade_read_today", [])
         with open(path, "w") as f:
             json.dump(feed, f)
 
