@@ -130,6 +130,17 @@ footer { padding: 16px 24px; color: var(--text-muted); font-size: 12px; }
 .tr-strike { font-size: 22px; font-weight: 700; color: var(--text); }
 .tr-strike-reason { font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }
 .tr-note { font-size: 11px; color: var(--text-muted); font-style: italic; margin-top: 6px; }
+.tr-decided { font-size: 11px; color: var(--text-muted); margin-bottom: 6px; }
+
+/* Trade Read decision log (accumulates across the day; newest on top) */
+.tr-history { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
+.tr-history-title { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); margin-bottom: 6px; }
+.tr-history-row { display: flex; gap: 10px; align-items: baseline; font-size: 12px; padding: 3px 0; border-bottom: 1px solid var(--surface-nested); }
+.tr-history-row:last-child { border-bottom: none; }
+.tr-history-time { flex: 0 0 84px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.tr-history-label { color: var(--text-secondary); font-weight: 600; }
+.tr-history-label.side-ce { color: #16a34a; }
+.tr-history-label.side-pe { color: #dc2626; }
 
 /* Brewing Moves panel */
 .brewing-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
