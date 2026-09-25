@@ -94,6 +94,16 @@ function scrollChipIntoView(strip, chip) {
   strip.scrollLeft = Math.max(0, chip.offsetLeft - (strip.clientWidth - chip.clientWidth) / 2);
 }
 
+// Map a "YYYY-MM-DD HH:MM" timestamp onto a shared reference date so the Day
+// Timeline overlays every selected day on ONE intraday axis (12:00 sits above
+// 12:00) instead of scattering each day across its own calendar date. The real
+// timestamp is kept separately (customdata) so hover still shows the true day.
+const TIMELINE_REF_DATE = "2000-01-01";
+function timeOfDay(ts) {
+  const time = String(ts).split(" ")[1] || String(ts);
+  return `${TIMELINE_REF_DATE} ${time}`;
+}
+
 function formatNumber(num) {
   if (num >= 100000) return (num / 100000).toFixed(1) + "L";
   if (num >= 1000) return (num / 1000).toFixed(1) + "K";
@@ -801,11 +811,18 @@ async function renderTimelineWithCompare(primaryFeed, primaryDay, expiry, compar
     pcr: ["#a78bfa", "#c084fc", "#8b5cf6", "#d946ef"]
   };
 
-  // Primary day traces
-  const t = primaryFeed.timeline.map((p) => p.t);
+  const PRICE_HOVER = "%{customdata}<br>%{y:,.0f}";
+  const PCR_HOVER = "%{customdata}<br>PCR %{y:.2f}";
+
+  // Primary day traces. x is time-of-day (aligned axis); customdata is the real
+  // timestamp so hover reports the actual day and time.
+  const t = primaryFeed.timeline.map((p) => timeOfDay(p.t));
+  const tReal = primaryFeed.timeline.map((p) => p.t);
   traces.push({
     x: t,
     y: primaryFeed.timeline.map((p) => p.spot),
+    customdata: tReal,
+    hovertemplate: PRICE_HOVER,
     name: `Spot (${primaryDay})`,
     type: "scatter",
     mode: "lines+markers",
@@ -814,6 +831,8 @@ async function renderTimelineWithCompare(primaryFeed, primaryDay, expiry, compar
   traces.push({
     x: t,
     y: primaryFeed.timeline.map((p) => p.max_pain),
+    customdata: tReal,
+    hovertemplate: PRICE_HOVER,
     name: `Max Pain (${primaryDay})`,
     type: "scatter",
     mode: "lines+markers",
@@ -822,6 +841,8 @@ async function renderTimelineWithCompare(primaryFeed, primaryDay, expiry, compar
   traces.push({
     x: t,
     y: primaryFeed.timeline.map((p) => p.pcr),
+    customdata: tReal,
+    hovertemplate: PCR_HOVER,
     name: `PCR (${primaryDay})`,
     type: "scatter",
     mode: "lines+markers",
@@ -834,12 +855,15 @@ async function renderTimelineWithCompare(primaryFeed, primaryDay, expiry, compar
     const cmpDay = compareDays[i];
     try {
       const cmpFeed = await fetchJson(`${cmpDay}/${expiry}.json`);
-      const cmpT = cmpFeed.timeline.map((p) => p.t);
+      const cmpT = cmpFeed.timeline.map((p) => timeOfDay(p.t));
+      const cmpTReal = cmpFeed.timeline.map((p) => p.t);
       const colorIdx = (i + 1) % colors.spot.length;
 
       traces.push({
         x: cmpT,
         y: cmpFeed.timeline.map((p) => p.spot),
+        customdata: cmpTReal,
+        hovertemplate: PRICE_HOVER,
         name: `Spot (${cmpDay})`,
         type: "scatter",
         mode: "lines+markers",
@@ -848,6 +872,8 @@ async function renderTimelineWithCompare(primaryFeed, primaryDay, expiry, compar
       traces.push({
         x: cmpT,
         y: cmpFeed.timeline.map((p) => p.max_pain),
+        customdata: cmpTReal,
+        hovertemplate: PRICE_HOVER,
         name: `Max Pain (${cmpDay})`,
         type: "scatter",
         mode: "lines+markers",
@@ -856,6 +882,8 @@ async function renderTimelineWithCompare(primaryFeed, primaryDay, expiry, compar
       traces.push({
         x: cmpT,
         y: cmpFeed.timeline.map((p) => p.pcr),
+        customdata: cmpTReal,
+        hovertemplate: PCR_HOVER,
         name: `PCR (${cmpDay})`,
         type: "scatter",
         mode: "lines+markers",
@@ -871,6 +899,7 @@ async function renderTimelineWithCompare(primaryFeed, primaryDay, expiry, compar
     ...CHART_INTERACTION_LAYOUT,
     ...CHART_THEME,
     margin: { t: 10 },
+    xaxis: { title: "Time of day", tickformat: "%H:%M", fixedrange: false },
     yaxis: { title: "Price", fixedrange: false },
     yaxis2: { title: "PCR", overlaying: "y", side: "right", fixedrange: false },
     legend: { orientation: "h", y: -0.2 }
