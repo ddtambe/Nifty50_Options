@@ -21,9 +21,41 @@
 body { font-family: system-ui, Arial, sans-serif; margin: 0; background: var(--bg); color: var(--text); }
 header { padding: 16px 24px; background: var(--surface); border-bottom: 1px solid var(--border); }
 h1 { margin: 0 0 8px; font-size: 20px; }
-.controls { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+.controls { display: flex; gap: 16px 20px; align-items: center; flex-wrap: wrap; }
 select { padding: 4px 8px; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: 4px; }
 #updated { color: var(--text-muted); font-size: 13px; }
+.expiry-picker { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-muted); }
+
+/* Day picker — a horizontal strip of clickable date chips (replaces a dropdown) */
+.day-picker { display: flex; align-items: center; gap: 10px; flex: 1 1 100%; min-width: 0; }
+.control-label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); flex: 0 0 auto; }
+.day-strip { display: flex; gap: 6px; overflow-x: auto; flex: 1 1 auto; min-width: 0; padding: 3px 2px; scroll-behavior: smooth; scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+.day-strip::-webkit-scrollbar { height: 6px; }
+.day-strip::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+.day-chip {
+  flex: 0 0 auto;
+  display: flex; flex-direction: column; align-items: center; line-height: 1.15;
+  padding: 4px 12px; min-width: 52px;
+  font: inherit; text-align: center; cursor: pointer;
+  background: var(--surface); color: var(--text-secondary);
+  border: 1px solid var(--border); border-radius: 999px;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+.day-chip .dc-dow { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+.day-chip .dc-date { font-size: 13px; font-weight: 600; }
+.day-chip:hover { border-color: #94a3b8; background: var(--surface-nested); }
+.day-chip:focus-visible { outline: 2px solid #3b82f6; outline-offset: 1px; }
+.day-chip.is-active { background: #3b82f6; border-color: #3b82f6; color: #fff; }
+.day-chip.is-active .dc-dow { color: #dbeafe; }
+
+.day-latest {
+  flex: 0 0 auto; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+  padding: 5px 10px; color: var(--blue-text); background: var(--surface);
+  border: 1px solid var(--border); border-radius: 999px; white-space: nowrap;
+}
+.day-latest:hover { border-color: #3b82f6; background: var(--blue-bg); }
+.day-latest[hidden] { display: none; }
 main { padding: 16px 24px; display: grid; gap: 24px; }
 section { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 12px; }
 h2 { font-size: 15px; margin: 0 0 8px; color: var(--text-secondary); }
@@ -37,9 +69,13 @@ th:first-child, td:first-child { text-align: center; font-weight: 600; }
 footer { padding: 16px 24px; color: var(--text-muted); font-size: 12px; }
 .compare-controls { margin-bottom: 12px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .compare-label { color: var(--text-muted); font-size: 13px; }
-.compare-item { display: inline-flex; align-items: center; gap: 4px; background: var(--surface-nested); padding: 4px 8px; border-radius: 4px; }
-.compare-item input { margin: 0; }
-.compare-item label { color: var(--text); font-size: 13px; cursor: pointer; }
+
+/* Compare toggles reuse the day chip, styled as multi-select overlay pills */
+.day-chip--compare { flex-direction: row; gap: 5px; padding: 4px 12px; min-width: 0; }
+.day-chip--compare .dc-dow { font-size: 11px; }
+.day-chip--compare.is-selected { background: var(--blue-bg); border-color: #38bdf8; color: var(--blue-text); }
+.day-chip--compare.is-selected .dc-dow { color: var(--blue-text); }
+.day-chip--compare.is-selected::before { content: "✓"; font-size: 11px; font-weight: 700; }
 
 /* Key Levels Summary Cards */
 .key-levels-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
