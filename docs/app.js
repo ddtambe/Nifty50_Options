@@ -5,6 +5,8 @@ const ATM_RANGE = 500; // Show strikes within +/- 500 of spot
 let globalIndex = null;
 let currentFeed = null;
 let allExpiryFeeds = {};
+let selectedDay = null;                 // primary trade date shown across the dashboard
+const compareDaySet = new Set();        // extra days overlaid on the Day Timeline
 
 // --- Shared TradingView-style chart interaction (applied to all charts) ---
 // Body-drag pans, axis-drag stretches each axis, toolbar Zoom button (or the
@@ -54,6 +56,44 @@ function option(value) {
   return o;
 }
 
+const DOW = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// "2026-07-31" -> {dom: 31, dow: "Fri", mon: "Jul"}. Parsed as a local date so
+// the weekday never shifts by a day the way `new Date("2026-07-31")` (UTC) can.
+function parseTradeDate(dateStr) {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return { dom: d, dow: DOW[new Date(y, m - 1, d).getDay()], mon: MON[m - 1] };
+}
+
+// A single day pill used by both the header day picker and the timeline
+// compare toggles — one component, two contexts.
+function dayChip(dateStr) {
+  const p = parseTradeDate(dateStr);
+  const chip = document.createElement("button");
+  chip.type = "button";
+  chip.className = "day-chip";
+  chip.dataset.day = dateStr;
+
+  const dow = document.createElement("span");
+  dow.className = "dc-dow";
+  dow.textContent = p.dow;
+
+  const date = document.createElement("span");
+  date.className = "dc-date";
+  date.textContent = p.dom + " " + p.mon;
+
+  chip.appendChild(dow);
+  chip.appendChild(date);
+  return chip;
+}
+
+// Center the active chip within its horizontally scrolling strip without
+// scrolling the whole page (scrollIntoView would).
+function scrollChipIntoView(strip, chip) {
+  strip.scrollLeft = Math.max(0, chip.offsetLeft - (strip.clientWidth - chip.clientWidth) / 2);
+}
+
 function formatNumber(num) {
   if (num >= 100000) return (num / 100000).toFixed(1) + "L";
   if (num >= 1000) return (num / 1000).toFixed(1) + "K";
@@ -62,16 +102,12 @@ function formatNumber(num) {
 
 async function loadIndex() {
   globalIndex = await fetchJson("index.json");
-  const daySel = document.getElementById("daySelect");
-  clearNode(daySel);
-  globalIndex.days.forEach((d) => daySel.appendChild(option(d.trade_date)));
-  daySel.onchange = () => {
-    populateExpiries(globalIndex);
-    updateCompareCheckboxes();
-  };
-  if (globalIndex.days.length) daySel.value = globalIndex.days[globalIndex.days.length - 1].trade_date;
-  populateExpiries(globalIndex);
-  updateCompareCheckboxes();
+  const days = globalIndex.days;
+  selectedDay = days.length ? days[days.length - 1].trade_date : null;
+
+  renderDayStrip();
+  populateExpiries();       // sets expiries for selectedDay and renders the dashboard
+  updateCompareControls();
 
   // Set up view toggle
   document.querySelectorAll('input[name="viewMode"]').forEach(radio => {
@@ -79,63 +115,104 @@ async function loadIndex() {
   });
 }
 
-function populateExpiries(idx) {
-  const day = document.getElementById("daySelect").value;
-  const dayEntry = idx.days.find((d) => d.trade_date === day);
+// Build the header day picker: one clickable pill per trading day, newest last,
+// the active day highlighted and scrolled into view.
+function renderDayStrip() {
+  const strip = document.getElementById("dayStrip");
+  const days = (globalIndex && globalIndex.days) || [];
+  clearNode(strip);
+
+  let activeChip = null;
+  days.forEach((d) => {
+    const isActive = d.trade_date === selectedDay;
+    const chip = dayChip(d.trade_date);
+    chip.classList.toggle("is-active", isActive);
+    chip.setAttribute("role", "tab");
+    chip.setAttribute("aria-selected", isActive ? "true" : "false");
+    chip.onclick = () => selectDay(d.trade_date);
+    if (isActive) activeChip = chip;
+    strip.appendChild(chip);
+  });
+
+  // "Latest" is only useful once there is more than one day to scroll through.
+  const latestBtn = document.getElementById("dayLatest");
+  if (latestBtn) {
+    latestBtn.hidden = days.length < 2;
+    latestBtn.onclick = () => selectDay(days[days.length - 1].trade_date);
+  }
+
+  if (activeChip) scrollChipIntoView(strip, activeChip);
+}
+
+// Switch the primary day. Comparisons are relative to the primary day, so they
+// reset on a day change (mirrors the old checkbox-rebuild behavior).
+function selectDay(day) {
+  if (!day || day === selectedDay) return;
+  selectedDay = day;
+  compareDaySet.clear();
+  renderDayStrip();
+  populateExpiries();
+  updateCompareControls();
+}
+
+function populateExpiries() {
+  const dayEntry = globalIndex && globalIndex.days.find((d) => d.trade_date === selectedDay);
   const expSel = document.getElementById("expirySelect");
   clearNode(expSel);
   (dayEntry ? dayEntry.expiries : []).forEach((e) => expSel.appendChild(option(e)));
   expSel.onchange = () => {
-    updateCompareCheckboxes();
+    compareDaySet.clear();   // eligible compare days depend on the chosen expiry
+    updateCompareControls();
     renderSelected();
   };
   renderSelected();
 }
 
-function updateCompareCheckboxes() {
+function updateCompareControls() {
   const container = document.getElementById("compareControls");
   clearNode(container);
 
   if (!globalIndex || globalIndex.days.length < 2) return;
 
-  const currentDay = document.getElementById("daySelect").value;
   const currentExpiry = document.getElementById("expirySelect").value;
   if (!currentExpiry) return;
 
+  // Only days that also carry the currently selected expiry can be overlaid.
+  const eligible = globalIndex.days.filter(
+    (d) => d.trade_date !== selectedDay && d.expiries.includes(currentExpiry)
+  );
+  if (eligible.length === 0) return;
+
   const label = document.createElement("span");
-  label.textContent = "Compare with: ";
+  label.textContent = "Compare with:";
   label.className = "compare-label";
   container.appendChild(label);
 
-  globalIndex.days.forEach((dayEntry) => {
-    if (dayEntry.trade_date === currentDay) return;
-    if (!dayEntry.expiries.includes(currentExpiry)) return;
+  eligible.forEach((dayEntry) => {
+    const day = dayEntry.trade_date;
+    const selected = compareDaySet.has(day);
 
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.id = "cmp-" + dayEntry.trade_date;
-    checkbox.value = dayEntry.trade_date;
-    checkbox.onchange = renderSelected;
-
-    const lbl = document.createElement("label");
-    lbl.htmlFor = checkbox.id;
-    lbl.textContent = dayEntry.trade_date;
-
-    const wrapper = document.createElement("span");
-    wrapper.className = "compare-item";
-    wrapper.appendChild(checkbox);
-    wrapper.appendChild(lbl);
-    container.appendChild(wrapper);
+    const chip = dayChip(day);
+    chip.classList.add("day-chip--compare");
+    chip.classList.toggle("is-selected", selected);
+    chip.setAttribute("aria-pressed", selected ? "true" : "false");
+    chip.title = selected ? "Overlaid — click to remove" : "Click to overlay on the chart";
+    chip.onclick = () => {
+      if (compareDaySet.has(day)) compareDaySet.delete(day);
+      else compareDaySet.add(day);
+      updateCompareControls();
+      renderSelected();
+    };
+    container.appendChild(chip);
   });
 }
 
 function getSelectedCompareDays() {
-  const checkboxes = document.querySelectorAll("#compareControls input[type=checkbox]:checked");
-  return Array.from(checkboxes).map((cb) => cb.value);
+  return Array.from(compareDaySet);
 }
 
 async function renderSelected() {
-  const day = document.getElementById("daySelect").value;
+  const day = selectedDay;
   const expiry = document.getElementById("expirySelect").value;
   if (!day || !expiry) return;
 
