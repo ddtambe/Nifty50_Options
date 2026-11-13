@@ -207,3 +207,13 @@ footer { padding: 16px 24px; color: var(--text-muted); font-size: 12px; }
 .strike-chip.is-selected { background: #2563eb; border-color: #2563eb; color: #fff; }
 .strike-chip--action { color: var(--text-muted); }
 .strike-chip:disabled { opacity: .35; cursor: default; }
+
+/* Day picker: current-day chip + Year/Month/Day dropdowns + search */
+.day-strip { flex: 0 1 auto; }
+.day-ymd { display: flex; gap: 6px; flex: 0 0 auto; }
+.day-ymd select { font: inherit; font-size: 13px; padding: 5px 8px; border-radius: 6px; cursor: pointer; }
+.day-ymd select:focus-visible { outline: 2px solid #3b82f6; outline-offset: 1px; }
+.day-search { display: flex; align-items: center; gap: 8px; flex: 0 1 340px; min-width: 180px; }
+.day-search input { width: 100%; font: inherit; font-size: 13px; padding: 6px 12px; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 999px; }
+.day-search input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15); }
+.day-search-count { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
