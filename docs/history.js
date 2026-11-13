@@ -1,6 +1,6 @@
 "use strict";
 
-// --- Strike History: TradingView-style continuous chart across ALL days ---
+// --- Strike History: TradingView-style continuous chart across saved days ---
 // Stitches every saved day's `strikes_timeline` for the selected expiry into one
 // time series per strike, so past + present LTP / OI read as a single chart.
 // Overnight hours and every no-data day (weekends, holidays, missed fetches)
@@ -16,16 +16,26 @@ const HISTORY_SESSION_MS = (HISTORY_MARKET_CLOSE_HR - HISTORY_MARKET_OPEN_HR) * 
 
 const historyState = {
   expiry: null,
+  key: null,                 // `${expiry}@${day}` the feeds were loaded for
   feeds: [],                 // [{day, feed}] sorted by day
   strikes: [],               // union of strikes across feeds, ascending
   selected: null,            // the ONE strike on the chart (TradingView-style)
   leg: "both",               // "ce" | "pe" | "both" | "straddle"
+  range: 1,                  // latest N trading days to plot; 0 = all. Default: today
 };
+const HISTORY_RANGES = [[1, "Today"], [3, "3D"], [5, "1W"], [0, "All"]];
+
+// Feeds actually plotted: the latest `range` trading days (all when 0).
+function historyVisibleFeeds() {
+  const { feeds, range } = historyState;
+  return range > 0 ? feeds.slice(-range) : feeds;
+}
 const historyFeedCache = new Map(); // `${day}/${expiry}` -> feed
 
 async function loadHistoryFeeds(expiry) {
   const days = ((globalIndex && globalIndex.days) || [])
-    .filter((d) => d.expiries.includes(expiry))
+    // Only days up to the day picked in the header: "Today" = that day.
+    .filter((d) => d.expiries.includes(expiry) && (!selectedDay || d.trade_date <= selectedDay))
     .map((d) => d.trade_date)
     .sort();
   const results = await Promise.all(days.map(async (day) => {
@@ -155,6 +165,25 @@ function renderHistoryControls() {
   const container = document.getElementById("historyControls");
   clearNode(container);
 
+  const rangeGroup = document.createElement("div");
+  rangeGroup.className = "history-strikes";
+  const rangeLabel = document.createElement("span");
+  rangeLabel.className = "compare-label";
+  rangeLabel.textContent = "Show:";
+  rangeGroup.appendChild(rangeLabel);
+  HISTORY_RANGES.forEach(([n, text]) => {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "strike-chip";
+    btn.textContent = text;
+    const on = historyState.range === n;
+    btn.classList.toggle("is-selected", on);
+    btn.setAttribute("aria-pressed", on ? "true" : "false");
+    btn.onclick = () => { historyState.range = n; historyRefreshView(); };
+    rangeGroup.appendChild(btn);
+  });
+  container.appendChild(rangeGroup);
+
   const legGroup = document.createElement("div");
   legGroup.className = "history-legs";
   [["ce", "CE"], ["pe", "PE"], ["both", "CE + PE"], ["straddle", "Straddle (CE+PE sum)"]].forEach(([val, text]) => {
@@ -207,7 +236,7 @@ function renderHistoryControls() {
 
 function drawHistoryChart() {
   const div = "historyChart";
-  const { feeds } = historyState;
+  const feeds = historyVisibleFeeds();
   const strike = historyState.selected;
   if (!feeds.length || strike == null) {
     Plotly.purge(div);
@@ -243,12 +272,6 @@ function drawHistoryChart() {
     xaxis: {
       type: "date", rangebreaks, fixedrange: false, anchor: "y3",
       tickformat: "%d %b\n%H:%M", showspikes: true, spikemode: "across", spikethickness: 1,
-      rangeselector: { x: 0, y: 1.06, buttons: [
-        { count: 1, label: "1D", step: "day", stepmode: "backward" },
-        { count: 3, label: "3D", step: "day", stepmode: "backward" },
-        { count: 7, label: "1W", step: "day", stepmode: "backward" },
-        { step: "all", label: "All" },
-      ] },
     },
     title: { text: `Strike ${strike}`, x: 0.5, font: { size: 15 } },
     yaxis: { title: historyState.leg === "straddle" ? "Straddle ₹" : "Option LTP ₹", domain: [0.38, 1], fixedrange: false },
@@ -261,19 +284,26 @@ function drawHistoryChart() {
 // Entry point called from app.js whenever the expiry (or day list) changes.
 async function renderStrikeHistory(expiry) {
   if (!expiry) return;
-  const expiryChanged = historyState.expiry !== expiry;
+  const key = `${expiry}@${selectedDay}`;
+  const expiryChanged = historyState.key !== key;   // new expiry OR new day
+  historyState.key = key;
   historyState.expiry = expiry;
   historyState.feeds = await loadHistoryFeeds(expiry);
-  historyState.strikes = historyStrikeUnion(historyState.feeds);
+  if (expiryChanged) historyState.range = 1;   // a new expiry/day opens on that day again
+  historyRefreshView(expiryChanged);
+}
 
-  // Keep the user's strike across refreshes; reset to ATM on a new expiry.
-  if (expiryChanged || !historyState.strikes.includes(historyState.selected)) {
-    historyState.selected = historyAtmStrike(historyState.strikes, historyLatestSpot(historyState.feeds));
+// Recompute strikes + label for the visible window and redraw.
+function historyRefreshView(resetStrike = false) {
+  const feeds = historyVisibleFeeds();
+  historyState.strikes = historyStrikeUnion(feeds);
+  if (resetStrike || !historyState.strikes.includes(historyState.selected)) {
+    historyState.selected = historyAtmStrike(historyState.strikes, historyLatestSpot(feeds));
   }
-
-  const days = historyState.feeds.map((f) => f.day);
+  const days = feeds.map((f) => f.day);
+  const total = historyState.feeds.length;
   document.getElementById("historyRange").textContent = days.length
-    ? `${days.length} day(s): ${days[0]} → ${days[days.length - 1]}`
+    ? `Showing ${days.length} of ${total} day(s): ${days[0]}${days.length > 1 ? " → " + days[days.length - 1] : ""}`
     : "";
   renderHistoryControls();
   drawHistoryChart();
