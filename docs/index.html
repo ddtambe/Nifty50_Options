@@ -14,6 +14,15 @@
       <div class="day-picker">
         <span class="control-label">Day</span>
         <div id="dayStrip" class="day-strip" role="tablist" aria-label="Trading day"></div>
+        <div class="day-ymd" aria-label="Pick a day by year, month and day">
+          <select id="dayYear" aria-label="Year"></select>
+          <select id="dayMonth" aria-label="Month"></select>
+          <select id="dayDay" aria-label="Day"></select>
+        </div>
+        <div class="day-search">
+          <input id="daySearch" type="search" placeholder="Search day… e.g. 27 Oct, 2026-10, Mon" aria-label="Search trading days" autocomplete="off" />
+          <span id="daySearchCount" class="day-search-count"></span>
+        </div>
         <button id="dayLatest" class="day-latest" type="button" title="Jump to the latest trading day" hidden>Latest ›</button>
       </div>
       <label class="expiry-picker">Expiry <select id="expirySelect"></select></label>
@@ -54,7 +63,7 @@
         <h2>Strike History — all days, one chart (LTP + OI per strike)</h2>
         <span id="historyRange" class="compare-label"></span>
       </div>
-      <p class="chart-hint">Every saved day for this expiry stitched into one continuous TradingView-style chart. Top: option premium (LTP) per strike with Nifty spot on the right axis. Bottom: open interest. Nights, weekends and no-data days are collapsed. Pick a strike (or step with ‹ ›); use 1D/3D/1W/All, drag to pan, drag axes to stretch, double-click to reset.</p>
+      <p class="chart-hint">Saved days for this expiry stitched into one continuous TradingView-style chart — opens on today; widen with 3D / 1W / All. Top: option premium (LTP) per strike with Nifty spot on the right axis. Bottom: open interest. Nights, weekends and no-data days are collapsed. Pick a strike (or step with ‹ ›); drag to pan, drag axes to stretch, double-click to reset.</p>
       <div id="historyControls" class="history-controls"></div>
       <div id="historyChart"></div>
     </section>
