@@ -252,6 +252,7 @@ async function renderSelected() {
 
   const compareDays = getSelectedCompareDays();
   await renderTimelineWithCompare(currentFeed, day, expiry, compareDays);
+  await renderStrikeHistory(expiry);
 }
 
 function findKeyLevels(feed) {
