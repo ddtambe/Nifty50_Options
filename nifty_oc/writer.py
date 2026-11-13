@@ -21,6 +21,7 @@ RAW_HEADER = [
     "timestamp_ist", "expiry", "ce_oi", "ce_chg_oi", "ce_ltp", "ce_iv", "ce_volume",
     "strike", "pe_volume", "pe_iv", "pe_ltp", "pe_chg_oi", "pe_oi",
     "ce_buildup", "pe_buildup",
+    "ce_bid", "ce_ask", "pe_bid", "pe_ask",
 ]
 BUILDUP_HEADER = [
     "strike", "ce_oi", "ce_chg_oi", "ce_buildup", "pe_oi", "pe_chg_oi",
@@ -113,15 +114,41 @@ def write_summary(snapshot: dict, data_dir: str) -> None:
     _append_rows(os.path.join(day, "summary.csv"), SUMMARY_HEADER, rows)
 
 
+def _upgrade_raw_header(path: str) -> None:
+    """Widen an existing raw CSV written before bid/ask columns existed.
+
+    A day's file started by pre-feature code has the old (shorter) header, so
+    appending wider rows would misalign every column. Rewrite the file once:
+    keep the new header and pad each legacy data row with empty bid/ask cells so
+    values stay under the right column names.
+    """
+    if not os.path.exists(path):
+        return
+    with open(path, newline="") as f:
+        rows = list(csv.reader(f))
+    if not rows or rows[0] == RAW_HEADER:
+        return
+    pad = [""] * (len(RAW_HEADER) - len(rows[0]))
+    with open(path, "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(RAW_HEADER)
+        for r in rows[1:]:
+            w.writerow(r + pad)
+
+
 def write_raw(snapshot: dict, data_dir: str) -> None:
     day = _day_dir(data_dir, snapshot["trade_date"])
     for e in snapshot["expiries"]:
+        path = os.path.join(day, f"{e['expiry']}_raw.csv")
+        _upgrade_raw_header(path)
         rows = [[
             snapshot["timestamp"], e["expiry"], r["ce_oi"], r["ce_chg_oi"], r["ce_ltp"],
             r["ce_iv"], r["ce_volume"], r["strike"], r["pe_volume"], r["pe_iv"],
             r["pe_ltp"], r["pe_chg_oi"], r["pe_oi"], r["ce_buildup"], r["pe_buildup"],
+            r.get("ce_best_bid", ""), r.get("ce_best_ask", ""),
+            r.get("pe_best_bid", ""), r.get("pe_best_ask", ""),
         ] for r in e["display_rows"]]
-        _append_rows(os.path.join(day, f"{e['expiry']}_raw.csv"), RAW_HEADER, rows)
+        _append_rows(path, RAW_HEADER, rows)
 
 
 def write_buildup(snapshot: dict, data_dir: str) -> None:
@@ -165,7 +192,10 @@ def write_json_feed(snapshot: dict, data_dir: str) -> None:
             "rows": [
                 {"strike": r["strike"], "ce_oi": r["ce_oi"], "pe_oi": r["pe_oi"],
                  "ce_volume": r["ce_volume"], "pe_volume": r["pe_volume"],
-                 "ce_ltp": r["ce_ltp"], "pe_ltp": r["pe_ltp"]}
+                 "ce_ltp": r["ce_ltp"], "pe_ltp": r["pe_ltp"],
+                 "ce_iv": r.get("ce_iv", 0), "pe_iv": r.get("pe_iv", 0),
+                 "ce_bid": r.get("ce_best_bid", 0), "ce_ask": r.get("ce_best_ask", 0),
+                 "pe_bid": r.get("pe_best_bid", 0), "pe_ask": r.get("pe_best_ask", 0)}
                 for r in e["display_rows"]
             ],
         })
