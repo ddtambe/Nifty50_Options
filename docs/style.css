@@ -196,3 +196,14 @@ footer { padding: 16px 24px; color: var(--text-muted); font-size: 12px; }
 .mny-neg { color: #dc2626; }
 .mny-ib { color: var(--text); font-weight: 600; }
 .mny-pcr { font-size: 0.9rem; color: var(--text-secondary); }
+
+/* Strike History (multi-day per-strike chart) */
+.history-controls { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.history-legs { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--text-muted); }
+.history-legs label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+.history-strikes { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.strike-chip { border: 1px solid #cbd5e1; background: #fff; color: #334155; border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; font-variant-numeric: tabular-nums; }
+.strike-chip:hover { border-color: #2563eb; }
+.strike-chip.is-selected { background: #2563eb; border-color: #2563eb; color: #fff; }
+.strike-chip--action { color: var(--text-muted); }
+.strike-chip:disabled { opacity: .35; cursor: default; }
