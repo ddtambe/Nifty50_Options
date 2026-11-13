@@ -49,6 +49,15 @@
       </div>
       <div id="wallsChart"></div>
     </section>
+    <section id="strikeHistorySection">
+      <div class="section-header">
+        <h2>Strike History — all days, one chart (LTP + OI per strike)</h2>
+        <span id="historyRange" class="compare-label"></span>
+      </div>
+      <p class="chart-hint">Every saved day for this expiry stitched into one continuous TradingView-style chart. Top: option premium (LTP) per strike with Nifty spot on the right axis. Bottom: open interest. Nights, weekends and no-data days are collapsed. Pick a strike (or step with ‹ ›); use 1D/3D/1W/All, drag to pan, drag axes to stretch, double-click to reset.</p>
+      <div id="historyControls" class="history-controls"></div>
+      <div id="historyChart"></div>
+    </section>
     <section>
       <h2>Day Timeline — Spot vs Max Pain vs PCR</h2>
       <div id="compareControls" class="compare-controls"></div>
@@ -71,6 +80,7 @@
   <footer>
     <p>Data auto-updates every ~5 min during market hours. Not financial advice; you decide the trade.</p>
   </footer>
+  <script src="history.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
