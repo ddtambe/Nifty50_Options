@@ -125,38 +125,138 @@ async function loadIndex() {
   });
 }
 
-// Build the header day picker: one clickable pill per trading day, newest last,
-// the active day highlighted and scrolled into view.
+// Header day picker. Default = ONLY the active day (no wall of every saved day).
+// Navigate with Year -> Month -> Day dropdowns, or type in the search box to
+// list matching days as chips.
+const DAY_SEARCH_MAX = 30;   // cap search hits so a broad query stays tidy
+const MON_FULL = ["january", "february", "march", "april", "may", "june", "july",
+  "august", "september", "october", "november", "december"];
+
+// Everything a user might type for a day: "2026-10-27", "27 oct", "oct 27",
+// "27 october", "tue", "27/10", "2026-10".
+function daySearchText(dateStr) {
+  const p = parseTradeDate(dateStr);
+  const m = Number(dateStr.split("-")[1]);
+  const mon = p.mon.toLowerCase();
+  const dd = String(p.dom).padStart(2, "0");
+  const mm = String(m).padStart(2, "0");
+  return [dateStr, `${p.dom} ${mon}`, `${mon} ${p.dom}`, `${p.dom} ${MON_FULL[m - 1]}`,
+    p.dow.toLowerCase(), `${p.dom}/${m}`, `${dd}/${mm}`].join(" | ");
+}
+
+function matchingDays(days, query) {
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+  return days.filter((d) => {
+    const text = daySearchText(d.trade_date);
+    return terms.every((t) => text.includes(t));
+  });
+}
+
+function fillSelect(sel, items, current) {
+  clearNode(sel);
+  items.forEach(([value, label]) => {
+    const o = document.createElement("option");
+    o.value = value;
+    o.textContent = label;
+    sel.appendChild(o);
+  });
+  sel.value = current;
+}
+
+// Year/Month/Day dropdowns, each limited to dates that actually have data.
+function renderDayDropdowns(days) {
+  const ySel = document.getElementById("dayYear");
+  const mSel = document.getElementById("dayMonth");
+  const dSel = document.getElementById("dayDay");
+  if (!ySel || !selectedDay) return;
+  const [y, m] = selectedDay.split("-");
+  const dates = days.map((d) => d.trade_date);
+  const uniq = (arr) => Array.from(new Set(arr));
+
+  const years = uniq(dates.map((d) => d.slice(0, 4))).reverse();
+  fillSelect(ySel, years.map((v) => [v, v]), y);
+
+  const months = uniq(dates.filter((d) => d.startsWith(y)).map((d) => d.slice(5, 7))).reverse();
+  fillSelect(mSel, months.map((v) => [v, MON[Number(v) - 1]]), m);
+
+  const inMonth = dates.filter((d) => d.startsWith(`${y}-${m}`)).reverse();
+  fillSelect(dSel, inMonth.map((d) => {
+    const p = parseTradeDate(d);
+    return [d, `${p.dom} ${p.dow}`];
+  }), selectedDay);
+
+  // Changing year/month jumps to the LATEST trading day in that period.
+  const latestIn = (prefix) => dates.filter((d) => d.startsWith(prefix)).pop();
+  ySel.onchange = () => selectDay(latestIn(ySel.value), { clearSearch: true });
+  mSel.onchange = () => selectDay(latestIn(`${ySel.value}-${mSel.value}`), { clearSearch: true });
+  dSel.onchange = () => selectDay(dSel.value, { clearSearch: true });
+}
+
+function wireDaySearch(search, days) {
+  if (!search || search.dataset.wired) return;
+  search.dataset.wired = "1";
+  search.oninput = () => renderDayStrip();
+  search.onkeydown = (ev) => {
+    if (ev.key === "Enter") {                    // Enter = open the newest match
+      const top = matchingDays(days, search.value.trim()).pop();
+      if (top) selectDay(top.trade_date, { clearSearch: true });
+    } else if (ev.key === "Escape") {
+      search.value = "";
+      renderDayStrip();
+    }
+  };
+}
+
 function renderDayStrip() {
   const strip = document.getElementById("dayStrip");
+  const search = document.getElementById("daySearch");
+  const countEl = document.getElementById("daySearchCount");
   const days = (globalIndex && globalIndex.days) || [];
+  const query = search ? search.value.trim() : "";
   clearNode(strip);
 
-  let activeChip = null;
-  days.forEach((d) => {
+  let shown;
+  if (query) {
+    const hits = matchingDays(days, query).reverse();       // newest first
+    shown = hits.slice(0, DAY_SEARCH_MAX);
+    countEl.textContent = hits.length === 0 ? "No matching day"
+      : hits.length > shown.length ? `${shown.length} of ${hits.length} — refine search`
+      : `${hits.length} match${hits.length > 1 ? "es" : ""}`;
+  } else {
+    shown = days.filter((d) => d.trade_date === selectedDay);
+    countEl.textContent = days.length > 1 ? `${days.length} days saved` : "";
+  }
+
+  shown.forEach((d) => {
     const isActive = d.trade_date === selectedDay;
     const chip = dayChip(d.trade_date);
     chip.classList.toggle("is-active", isActive);
     chip.setAttribute("role", "tab");
     chip.setAttribute("aria-selected", isActive ? "true" : "false");
-    chip.onclick = () => selectDay(d.trade_date);
-    if (isActive) activeChip = chip;
+    chip.onclick = () => selectDay(d.trade_date, { clearSearch: true });
     strip.appendChild(chip);
   });
 
-  // "Latest" is only useful once there is more than one day to scroll through.
+  wireDaySearch(search, days);
+  renderDayDropdowns(days);
+
+  // "Latest" only when viewing an older day.
   const latestBtn = document.getElementById("dayLatest");
   if (latestBtn) {
-    latestBtn.hidden = days.length < 2;
-    latestBtn.onclick = () => selectDay(days[days.length - 1].trade_date);
+    const latest = days.length ? days[days.length - 1].trade_date : null;
+    latestBtn.hidden = !latest || latest === selectedDay;
+    latestBtn.onclick = () => selectDay(latest, { clearSearch: true });
   }
-
-  if (activeChip) scrollChipIntoView(strip, activeChip);
 }
 
 // Switch the primary day. Comparisons are relative to the primary day, so they
 // reset on a day change (mirrors the old checkbox-rebuild behavior).
-function selectDay(day) {
+function selectDay(day, opts = {}) {
+  const search = document.getElementById("daySearch");
+  if (opts.clearSearch && search && search.value) {
+    search.value = "";
+    if (day === selectedDay) { renderDayStrip(); return; }
+  }
   if (!day || day === selectedDay) return;
   selectedDay = day;
   compareDaySet.clear();
